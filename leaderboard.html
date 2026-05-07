@@ -1,11 +1,18 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Лидерборд</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'><div class='row' style='justify-content:space-between'><strong id='welcome'></strong><div><a href='main.html'><button class='ghost'>Main</button></a> <a href='vote.html'><button class='ghost'>Голосование</button></a></div></div>
 <table><thead><tr><th>Игрок</th><th>I критерий</th><th>II критерий</th><th>III критерий</th><th>IV критерий</th><th>Общий</th></tr></thead><tbody id='tbody'></tbody></table></div>
+<div id='modal' class='hidden card' style='position:fixed;inset:10% auto auto 10%;max-width:80%;z-index:20'><h3 id='m-title'></h3><div id='m-body' class='scroll'></div><button id='m-close'>Закрыть</button></div>
 <script type='module'>
-import { requireVerified, PARAMS, getParamStats } from './app.js';
+import { requireVerified, PARAMS } from './app.js';
 const user=await requireVerified(); if(!user) location.href='index.html';
-const state=user.state||{players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};
+const state=user.state||{players:[],ballots:{}};state.ballots=state.ballots||{};
 document.getElementById('welcome').textContent=user.email;
-const rows=state.players.map(p=>{const stats=PARAMS.map(pm=>getParamStats(state,p,pm));const vals=stats.flatMap((_,i)=>Object.values(state.votes[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const c=vals.length,a=c?vals.reduce((x,y)=>x+y,0)/c:0;return{p,stats,a,c};}).sort((a,b)=>b.a-a.a||b.c-a.c||a.p.localeCompare(b.p,'ru'));
-const tbody=document.getElementById('tbody');rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.p}</td><td>${r.stats[0].avg.toFixed(2)} (${r.stats[0].count})</td><td>${r.stats[1].avg.toFixed(2)} (${r.stats[1].count})</td><td>${r.stats[2].avg.toFixed(2)} (${r.stats[2].count})</td><td>${r.stats[3].avg.toFixed(2)} (${r.stats[3].count})</td><td>${r.a.toFixed(2)} (${r.c})</td>`;tbody.appendChild(tr);});
+const players=state.players||[];
+function confirmedForPlayer(p){const byVoter=state.ballots[p]||{};return Object.entries(byVoter).filter(([,b])=>b.status==='confirmed');}
+const rows=players.map(p=>{const confirmed=confirmedForPlayer(p);const stats=PARAMS.map(pm=>{const vals=confirmed.map(([,b])=>b.scores?.[pm]).filter(Number.isInteger);const count=vals.length;const avg=count?vals.reduce((a,b)=>a+b,0)/count:0;return {avg,count};});const all=stats.map(s=>s.avg).filter(v=>v>0);const a=all.length?all.reduce((x,y)=>x+y,0)/all.length:0;return {p,stats,a};}).sort((a,b)=>b.a-a.a);
+const tbody=document.getElementById('tbody');
+function openDetails(player, param){const voters=state.ballots[player]||{};let html='<table><tr><th>Оценщик</th>'+PARAMS.map(x=>`<th>${x}</th>`).join('')+'<th>Статус</th></tr>';for(const [v,b] of Object.entries(voters)){html+=`<tr><td>${v}</td>${PARAMS.map(pm=>`<td>${b.scores?.[pm]??'—'}</td>`).join('')}<td>${b.status||'draft'}</td></tr>`;}html+='</table>';document.getElementById('m-title').textContent=`${player} — ${param}`;document.getElementById('m-body').innerHTML=html;document.getElementById('modal').classList.remove('hidden');}
+document.getElementById('m-close').onclick=()=>document.getElementById('modal').classList.add('hidden');
+rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.p}</td>${r.stats.map((s,i)=>`<td><button class='ghost cell' data-p='${r.p}' data-i='${i}'>${s.avg.toFixed(2)} (${s.count})</button></td>`).join('')}<td>${r.a.toFixed(2)}</td>`;tbody.appendChild(tr);});
+document.querySelectorAll('.cell').forEach(btn=>btn.onclick=()=>openDetails(btn.dataset.p, PARAMS[Number(btn.dataset.i)]));
 </script></body></html>
