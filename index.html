@@ -35,7 +35,7 @@ const firebaseConfig = { apiKey:"AIzaSyAxgLF6gMi0S52d0cisPRooLNNCC986Wh4", authD
 const app = initializeApp(firebaseConfig); const db = getFirestore(app);
 
 const POINTS=[9,8,7,6,5,4,3,2,1,0],PARAMS=['I критерий','II критерий','III критерий','IV критерий'];
-let state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'}; let draft=null; let currentUser=null;
+let state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'}; let draft=null; let currentUser=null; // {email,password,verified}
 const $=id=>document.getElementById(id);
 const loginScreen=$('login-screen'),appScreen=$('app-screen'),emailInput=$('email'),passwordInput=$('password'),authMsg=$('auth-msg');
 const loginBtn=$('login-btn'),registerBtn=$('register-btn'),welcome=$('welcome'),logoutBtn=$('logout-btn'),newPlayerInput=$('new-player'),addPlayerBtn=$('add-player-btn');
@@ -53,10 +53,10 @@ async function loadUserData(email){
   if(!state.players?.length) state.players=['Игрок_1','Игрок_2','Игрок_3'];
   if(!state.votes) state.votes={}; if(!state.activeTab) state.activeTab='vote';
 }
-async function saveUserData(){ if(!currentUser) return; await setDoc(doc(db,'users',userDocId(currentUser.email)),{email:currentUser.email,password:currentUser.password,state}); }
+async function saveUserData(){ if(!currentUser) return; await setDoc(doc(db,'users',userDocId(currentUser.email)),{email:currentUser.email,password:currentUser.password,verified:currentUser.verified===true,state}); }
 
 function render(){
-  const logged=!!currentUser; loginScreen.classList.toggle('hidden',logged); appScreen.classList.toggle('hidden',!logged);
+  const logged=!!currentUser && currentUser.verified===true; loginScreen.classList.toggle('hidden',logged); appScreen.classList.toggle('hidden',!logged);
   if(logged) welcome.textContent=`Вы вошли: ${currentUser.email}`;
   if(!draft) resetDraft(); renderVote(); renderLeaderboard(); switchTab(state.activeTab,false);
 }
@@ -77,10 +77,16 @@ function getParamStats(player,param){const all=Object.values(state.votes[player]
 function renderLeaderboard(){const rows=state.players.map(p=>{const stats=PARAMS.map(pm=>getParamStats(p,pm));const vals=stats.flatMap((_,i)=>Object.values(state.votes[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const tc=vals.length,ta=tc?vals.reduce((a,b)=>a+b,0)/tc:0;return{player:p,stats,ta,tc};}).sort((a,b)=>b.ta-a.ta||b.tc-a.tc||a.player.localeCompare(b.player,'ru')); leaderboardBody.innerHTML=''; rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.player}</td><td>${r.stats[0].avg.toFixed(2)} (${r.stats[0].count})</td><td>${r.stats[1].avg.toFixed(2)} (${r.stats[1].count})</td><td>${r.stats[2].avg.toFixed(2)} (${r.stats[2].count})</td><td>${r.stats[3].avg.toFixed(2)} (${r.stats[3].count})</td><td>${r.ta.toFixed(2)} (${r.tc})</td>`;leaderboardBody.appendChild(tr);});}
 function switchTab(tab,save=true){state.activeTab=tab;const v=tab==='vote';votePanel.classList.toggle('hidden',!v);leaderboardPanel.classList.toggle('hidden',v);voteTabBtn.className=v?'':'ghost';leaderboardTabBtn.className=v?'ghost':''; if(save) saveUserData();}
 
-loginBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const snap=await getDoc(doc(db,'users',userDocId(email)));if(!snap.exists()) throw new Error('Аккаунт не найден');const data=snap.data();if(data.password!==password) throw new Error('Неверный пароль');currentUser={email,password};state=data.state||state;resetDraft();render();authMsg.textContent='';}catch(e){authMsg.textContent=e.message;authMsg.className='danger';}};
-registerBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const ref=doc(db,'users',userDocId(email));const snap=await getDoc(ref);if(snap.exists()) throw new Error('Email уже зарегистрирован');currentUser={email,password};state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};await saveUserData();resetDraft();render();authMsg.textContent='';}catch(e){authMsg.textContent=e.message;authMsg.className='danger';}};
-logoutBtn.onclick=()=>{currentUser=null;draft=null;render();};
-addPlayerBtn.onclick=async()=>{const n=newPlayerInput.value.trim();if(!n||state.players.includes(n))return;state.players.push(n);newPlayerInput.value='';resetDraft();await saveUserData();render();};
+loginBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const snap=await getDoc(doc(db,'users',userDocId(email)));if(!snap.exists()) throw new Error('Аккаунт не найден');const data=snap.data();if(data.password!==password) throw new Error('Неверный пароль');if(data.verified!==true) throw new Error('Аккаунт не верифицирован. Доступ запрещён.');currentUser={email,password,verified:true};state=data.state||state;resetDraft();render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}authMsg.textContent='';}catch(e){currentUser=null;render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}authMsg.textContent=e.message;authMsg.className='danger';}};
+registerBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const ref=doc(db,'users',userDocId(email));const snap=await getDoc(ref);if(snap.exists()) throw new Error('Email уже зарегистрирован');state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};await setDoc(ref,{email,password,verified:false,state});currentUser=null;render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}authMsg.textContent='Регистрация успешна. Ожидайте верификацию аккаунта (verified=true в БД).';authMsg.className='ok';}catch(e){authMsg.textContent=e.message;authMsg.className='danger';}};
+logoutBtn.onclick=()=>{currentUser=null;draft=null;render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}};
+addPlayerBtn.onclick=async()=>{const n=newPlayerInput.value.trim();if(!n||state.players.includes(n))return;state.players.push(n);newPlayerInput.value='';resetDraft();await saveUserData();render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}};
 voteTabBtn.onclick=()=>switchTab('vote'); leaderboardTabBtn.onclick=()=>switchTab('leaderboard'); backBtn.onclick=goBack; confirmStageBtn.onclick=confirmStage; finishBtn.onclick=finalizeParam;
 render();
+if(!currentUser){authMsg.textContent='Для доступа нужен вход и верификация аккаунта.';authMsg.className='danger';}
 </script></body></html>
