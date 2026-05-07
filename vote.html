@@ -1,25 +1,24 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Голосование</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'>
 <div class='row' style='justify-content:space-between'><strong id='welcome'></strong><div><a href='main.html'><button class='ghost'>Main</button></a> <a href='leaderboard.html'><button class='ghost'>Лидерборд</button></a></div></div>
-<h3>Кого оцениваем</h3><select id='target'></select><div id='status' class='muted'></div>
-<h3 id='param-title'></h3><div id='candidate-list' class='scroll'></div>
-<div class='row'><button id='save-btn'>Сохранить/изменить</button><button id='confirm-btn' class='ghost'>Подтвердить отправку</button><button id='revoke-btn' class='ghost'>Отозвать</button></div>
+<div id='vote-lock'></div><h3 id='param-title'></h3><h4 id='stage-title'></h4><div id='stage-stats'></div>
+<div id='candidate-list' class='scroll'></div><div class='row'><button id='back-btn' class='ghost'>Назад</button><button id='confirm-btn'>Подтвердить место</button></div>
+<div id='preview' class='hidden scroll'></div><button id='finish-btn' class='hidden'>Подтвердить критерий</button>
 </div>
 <script type='module'>
-import { requireVerified, saveState, PARAMS } from './app.js';
+import { requireVerified, saveState, POINTS, PARAMS } from './app.js';
 const user=await requireVerified(); if(!user) location.href='index.html';
-const state=user.state||{players:[],ballots:{}};
-state.players=Array.from(new Set([...(state.players||[]), user.email]));
-state.ballots=state.ballots||{};
+const state=user.state||{players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};
+document.getElementById('welcome').textContent=`${user.email}`;
+let draft={param:0,place:1,remaining:[...state.players],selected:new Set(),groups:{}};
 const $=id=>document.getElementById(id);
-$('welcome').textContent=user.email;
-const targets=state.players.filter(p=>p!==user.email);
-$('target').innerHTML=targets.map(t=>`<option>${t}</option>`).join('');
-function getBallot(target){state.ballots[target]=state.ballots[target]||{};state.ballots[target][user.email]=state.ballots[target][user.email]||{scores:{},status:'draft'};return state.ballots[target][user.email];}
-function render(){const t=$('target').value;const b=getBallot(t);$('candidate-list').innerHTML=PARAMS.map((pm,i)=>`<div class='line'><label>${pm}</label><input type='number' min='0' max='9' id='i_${i}' value='${Number.isInteger(b.scores[pm])?b.scores[pm]:''}'></div>`).join('');$('status').textContent=`Статус: ${b.status==='confirmed'?'подтверждено':(b.status==='pending'?'на подтверждении':'черновик')}`;}
-$('target').onchange=render;
-$('save-btn').onclick=async()=>{const t=$('target').value;const b=getBallot(t);for(const pm of PARAMS){const v=Number(document.getElementById(`i_${PARAMS.indexOf(pm)}`).value);if(!Number.isInteger(v)||v<0||v>9){alert('Заполните все критерии 0..9');return;}b.scores[pm]=v;}b.status='pending';await saveState(user.email,user.password,user.verified,state);alert('Оценка сохранена, перенаправление на Main');location.href='main.html';};
-$('confirm-btn').onclick=async()=>{const b=getBallot($('target').value);if(PARAMS.some(pm=>!Number.isInteger(b.scores[pm]))){alert('Сначала заполните все критерии');return;}b.status='confirmed';await saveState(user.email,user.password,user.verified,state);render();};
-$('revoke-btn').onclick=async()=>{const t=$('target').value;delete state.ballots[t][user.email];await saveState(user.email,user.password,user.verified,state);render();};
+function ensureVote(p,uid){if(!state.votes[p]) state.votes[p]={}; if(!state.votes[p][uid]) state.votes[p][uid]={};}
+function resetParam(){draft.place=1;draft.remaining=[...state.players];draft.selected=new Set();draft.groups={};}
+function render(){const locked=state.players.length<10;$('vote-lock').textContent=locked?`Нужно минимум 10 игроков, сейчас ${state.players.length}`:'';$('vote-lock').className=locked?'danger':'ok'; if(locked){$('candidate-list').innerHTML='';return;}
+$('param-title').textContent=`${PARAMS[draft.param]} (${draft.param+1}/4)`;
+if(draft.place<=10){const rem=draft.remaining.length,placesLeft=11-draft.place,max=rem-(placesLeft-1);$('stage-title').textContent=`Место ${draft.place} (${POINTS[draft.place-1]} баллов)`;$('stage-stats').textContent=`Выберите 1..${max}`;$('candidate-list').innerHTML='';draft.remaining.forEach(p=>{const d=document.createElement('div');d.className='line'+(draft.selected.has(p)?' sel':'');d.textContent=p;d.onclick=()=>{if(draft.selected.has(p))draft.selected.delete(p);else if(draft.selected.size<max)draft.selected.add(p);render();};$('candidate-list').appendChild(d);});$('preview').classList.add('hidden');$('finish-btn').classList.add('hidden');} else {let html=`<h3>Итог ${PARAMS[draft.param]}</h3>`;for(let i=1;i<=10;i++){html+=`<div>${i} место: ${(draft.groups[i]||[]).join(', ')||'—'}</div>`;}$('preview').innerHTML=html;$('preview').classList.remove('hidden');$('finish-btn').classList.remove('hidden');$('candidate-list').innerHTML='';$('stage-title').textContent='Проверка';$('stage-stats').textContent='';}}
+$('confirm-btn').onclick=()=>{const rem=draft.remaining.length,placesLeft=11-draft.place,max=rem-(placesLeft-1),pick=[...draft.selected];if(pick.length<1||pick.length>max){alert(`Выберите 1..${max}`);return;}draft.groups[draft.place]=pick;draft.remaining=draft.remaining.filter(p=>!draft.selected.has(p));draft.selected=new Set();draft.place++;render();};
+$('back-btn').onclick=()=>{if(draft.place<=1)return;const prev=draft.place-1;if(draft.groups[prev]){draft.remaining=[...draft.groups[prev],...draft.remaining];delete draft.groups[prev];}draft.place=prev;draft.selected=new Set();render();};
+$('finish-btn').onclick=async()=>{for(let i=1;i<=10;i++) for(const p of (draft.groups[i]||[])){ensureVote(p,user.email);state.votes[p][user.email][PARAMS[draft.param]]=POINTS[i-1];}if(draft.param<3){draft.param++;resetParam();}else{alert('Все критерии сохранены');draft={param:0,place:1,remaining:[...state.players],selected:new Set(),groups:{}};}await saveState(user.email,user.password,user.verified,state);render();};
 render();
 </script></body></html>
