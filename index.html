@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Голосование игроков</title>
+<style>
+body{font-family:Arial;background:#f5f7fb;margin:0;padding:20px}.card{max-width:980px;margin:auto;background:#fff;padding:18px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.hidden{display:none}.row{display:flex;gap:8px;align-items:center}.tabs{display:flex;gap:8px;margin:10px 0}button{padding:8px 12px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}.ghost{background:#e5e7eb;color:#111}
+input{padding:8px;border-radius:8px;border:1px solid #d1d5db}.line{padding:9px;border:1px solid #d1d5db;border-radius:8px;margin:6px 0;cursor:pointer}.sel{background:#bfdbfe;border-color:#2563eb}.danger{color:#b91c1c}.ok{color:#166534}
+.scroll{max-height:320px;overflow-y:auto;padding-right:6px}.scroll::-webkit-scrollbar{width:10px}.scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+</style></head><body>
+<div class="card" id="login-screen"><h2>Начальный экран</h2><div class="row"><input id="nickname" placeholder="Ваш ник"/><button id="login-btn">Войти</button></div></div>
+<div class="card hidden" id="app-screen">
+  <div class="row" style="justify-content:space-between"><strong id="welcome"></strong><button id="logout-btn" class="ghost">Выйти</button></div>
+  <div class="row" style="margin-top:8px"><input id="new-player" placeholder="Ник нового игрока"/><button id="add-player-btn">Добавить</button></div>
+  <div class="tabs"><button id="vote-tab-btn">Голосовать</button><button id="leaderboard-tab-btn" class="ghost">Лидерборд</button></div>
+  <div id="vote-panel">
+    <div id="vote-lock"></div><h3 id="param-title"></h3><h4 id="stage-title"></h4><div id="stage-help"></div><div id="stage-stats"></div>
+    <div id="candidate-list" class="scroll"></div>
+    <div class="row"><button id="back-btn" class="ghost">Назад</button><button id="confirm-stage-btn">Подтвердить место</button></div>
+    <div id="preview" class="hidden scroll"></div><button id="finish-btn" class="hidden">Подтвердить параметр</button>
+  </div>
+  <div id="leaderboard-panel" class="hidden">
+    <table><thead><tr><th>Игрок</th><th>Скилл</th><th>Команда</th><th>Стратегия</th><th>Стабильность</th><th>Общий</th></tr></thead><tbody id="leaderboard-body"></tbody></table>
+  </div>
+</div>
+<script>
+const STORAGE_KEY='local-vote-app-v9',POINTS=[9,8,7,6,5,4,3,2,1,0],PARAMS=['Вклад','Качество','Надёжность','Коммуникация'],defaultPlayers=['Игрок_1','Игрок_2','Игрок_3'];
+const state=loadState(); let draft=null;
+const $=id=>document.getElementById(id);
+const loginScreen=$('login-screen'),appScreen=$('app-screen'),nicknameInput=$('nickname'),loginBtn=$('login-btn'),welcome=$('welcome'),logoutBtn=$('logout-btn'),newPlayerInput=$('new-player'),addPlayerBtn=$('add-player-btn');
+const voteTabBtn=$('vote-tab-btn'),leaderboardTabBtn=$('leaderboard-tab-btn'),votePanel=$('vote-panel'),leaderboardPanel=$('leaderboard-panel'),leaderboardBody=$('leaderboard-body');
+const voteLock=$('vote-lock'),paramTitle=$('param-title'),stageTitle=$('stage-title'),stageHelp=$('stage-help'),stageStats=$('stage-stats'),candidateList=$('candidate-list'),backBtn=$('back-btn'),confirmStageBtn=$('confirm-stage-btn'),preview=$('preview'),finishBtn=$('finish-btn');
+function loadState(){try{const p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return{currentUser:p.currentUser||'',players:Array.isArray(p.players)&&p.players.length?p.players:defaultPlayers,votes:p.votes&&typeof p.votes==='object'?p.votes:{},activeTab:p.activeTab==='leaderboard'?'leaderboard':'vote'};}catch{return{currentUser:'',players:defaultPlayers,votes:{},activeTab:'vote'};}}
+function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}
+function ensure(player){if(!state.votes[player]||typeof state.votes[player]!=='object')state.votes[player]={}; if(!state.votes[player][state.currentUser]||typeof state.votes[player][state.currentUser]!=='object')state.votes[player][state.currentUser]={};}
+function resetDraft(){draft={param:0,place:1,remaining:[...state.players],selected:new Set(),groups:{}};}
+function resetParamDraft(){draft.place=1;draft.remaining=[...state.players];draft.selected=new Set();draft.groups={};}
+function render(){const ok=!!state.currentUser;loginScreen.classList.toggle('hidden',ok);appScreen.classList.toggle('hidden',!ok);if(ok)welcome.textContent=`Вы вошли как: ${state.currentUser}`;if(!draft)resetDraft();renderVote();renderLeaderboard();switchTab(state.activeTab,false);}
+function renderVote(){const locked=state.players.length<10;voteLock.textContent=locked?`Голосование заблокировано: нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Списки прокручиваются. Выбирайте лучших из оставшихся.';voteLock.className=locked?'danger':'ok';if(locked){candidateList.innerHTML='';confirmStageBtn.disabled=true;finishBtn.classList.add('hidden');return;}paramTitle.textContent=`Параметр ${draft.param+1}/4: ${PARAMS[draft.param]}`;if(draft.place<=10){const rem=draft.remaining.length,placesLeft=11-draft.place,maxSelect=rem-(placesLeft-1);stageTitle.textContent=`Место ${draft.place} (${POINTS[draft.place-1]} баллов)`;stageHelp.textContent='Клик по строке выбирает/снимает игрока.';stageStats.textContent=`Выберите от 1 до ${maxSelect}. Осталось игроков: ${rem}.`;renderCandidates(maxSelect);preview.classList.add('hidden');finishBtn.classList.add('hidden');}else renderPreview();}
+function renderCandidates(maxSelect){candidateList.innerHTML='';draft.remaining.forEach(player=>{const d=document.createElement('div');const sel=draft.selected.has(player);d.className='line'+(sel?' sel':'');d.textContent=player;d.onclick=()=>{if(sel)draft.selected.delete(player);else{if(draft.selected.size>=maxSelect)return;draft.selected.add(player);}renderVote();};candidateList.appendChild(d);});}
+function confirmStage(){const rem=draft.remaining.length,placesLeft=11-draft.place,maxSelect=rem-(placesLeft-1),pick=[...draft.selected];if(pick.length<1||pick.length>maxSelect){alert(`Выберите от 1 до ${maxSelect}`);return;}draft.groups[draft.place]=pick;draft.remaining=draft.remaining.filter(p=>!draft.selected.has(p));draft.selected=new Set();draft.place++;if(draft.place===11&&draft.remaining.length===0){renderVote();return;}renderVote();}
+function goBack(){if(draft.place<=1)return;const prev=draft.place-1;if(draft.groups[prev]){draft.remaining=[...draft.groups[prev],...draft.remaining];delete draft.groups[prev];}draft.place=prev;draft.selected=new Set();renderVote();}
+function renderPreview(){let html=`<h3>Итог по параметру: ${PARAMS[draft.param]}</h3>`;for(let i=1;i<=10;i++){const g=draft.groups[i]||[];html+=`<div>${i} место (${POINTS[i-1]}): ${g.join(', ')||'—'}</div>`;}preview.innerHTML=html;preview.classList.remove('hidden');finishBtn.classList.remove('hidden');stageTitle.textContent='Проверьте итог';stageHelp.textContent='После подтверждения этот параметр фиксируется и начнётся следующий.';stageStats.textContent='';candidateList.innerHTML='';}
+function finalizeParam(){for(let i=1;i<=10;i++)for(const p of (draft.groups[i]||[])){ensure(p);state.votes[p][state.currentUser][PARAMS[draft.param]]=POINTS[i-1];}saveState();if(draft.param<3){draft.param++;resetParamDraft();renderVote();alert('Параметр сохранён. Переходим к следующему.');}else{alert('Все 4 параметра сохранены.');resetDraft();renderVote();renderLeaderboard();}}
+function getParamStats(player,param){const all=Object.values(state.votes[player]||{}).map(v=>v[param]).filter(Number.isInteger);const c=all.length;return{avg:c?all.reduce((a,b)=>a+b,0)/c:0,count:c};}
+function renderLeaderboard(){const rows=state.players.map(p=>{const byParam=PARAMS.map(pm=>getParamStats(p,pm));const allVals=byParam.flatMap((_,i)=>Object.values(state.votes[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const totalCount=allVals.length;const totalAvg=totalCount?allVals.reduce((a,b)=>a+b,0)/totalCount:0;return{player:p,byParam,totalAvg,totalCount};}).sort((a,b)=>b.totalAvg-a.totalAvg||b.totalCount-a.totalCount||a.player.localeCompare(b.player,'ru'));
+leaderboardBody.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');const cells=r.byParam.map(s=>`${s.avg.toFixed(2)} (${s.count})`).join('</td><td>');tr.innerHTML=`<td>${r.player}</td><td>${cells}</td><td>${r.totalAvg.toFixed(2)} (${r.totalCount})</td>`;leaderboardBody.appendChild(tr);});}
+function switchTab(tab,save=true){state.activeTab=tab;const v=tab==='vote';votePanel.classList.toggle('hidden',!v);leaderboardPanel.classList.toggle('hidden',v);voteTabBtn.className=v?'':'ghost';leaderboardTabBtn.className=v?'ghost':'';if(save)saveState();}
+loginBtn.onclick=()=>{const n=nicknameInput.value.trim();if(!n)return;state.currentUser=n;if(!state.players.includes(n))state.players.push(n);saveState();resetDraft();render();nicknameInput.value='';};
+addPlayerBtn.onclick=()=>{const n=newPlayerInput.value.trim();if(!n||state.players.includes(n))return;state.players.push(n);saveState();resetDraft();render();newPlayerInput.value='';};
+logoutBtn.onclick=()=>{state.currentUser='';saveState();render();};voteTabBtn.onclick=()=>switchTab('vote');leaderboardTabBtn.onclick=()=>switchTab('leaderboard');confirmStageBtn.onclick=confirmStage;backBtn.onclick=goBack;finishBtn.onclick=finalizeParam;
+render();
+</script></body></html>
