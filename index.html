@@ -1,16 +1,2 @@
-<!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Вход</title><link rel='stylesheet' href='styles.css'></head><body>
-<div class='card'>
-<h2>Вход / Регистрация</h2>
-<div class='row'><input id='email' placeholder='Email'></div>
-<div class='row' style='margin-top:8px'><input id='password' type='password' placeholder='Пароль'></div>
-<div class='row' style='margin-top:10px'><button id='login-btn'>Войти</button><button id='register-btn' class='ghost'>Регистрация</button></div>
-<div id='msg'></div>
-</div>
-<script type='module'>
-import { getUser, registerUser, setSessionEmail, getSessionEmail, clearSession } from './app.js';
-const $=id=>document.getElementById(id),msg=$('msg');
-function showError(e){const txt=(e?.message||'Ошибка');msg.textContent=txt.includes('Missing or insufficient permissions')?'Ошибка прав Firestore: опубликуйте firestore.rules.':txt;msg.className='danger';}
-(async()=>{const email=getSessionEmail();if(!email) return;try{const u=await Promise.race([getUser(email),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),1200))]);if(u) location.href=u.verified===true?'main.html':'verify.html';else clearSession();}catch{clearSession();}})();
-$('login-btn').onclick=async()=>{try{msg.textContent='Вход...';const email=$('email').value.trim(),password=$('password').value;if(!email||!password) throw new Error('Заполните email и пароль');const user=await getUser(email);if(!user) throw new Error('Аккаунт не найден');if(user.password!==password) throw new Error('Неверный пароль');setSessionEmail(email);location.href=user.verified===true?'main.html':'verify.html';}catch(e){showError(e);}};
-$('register-btn').onclick=async()=>{try{msg.textContent='Регистрация...';const email=$('email').value.trim(),password=$('password').value;if(!email||!password) throw new Error('Заполните email и пароль');await registerUser(email,password);setSessionEmail(email);location.href='verify.html';}catch(e){showError(e);}};
-</script></body></html>
+<!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Вход</title><link rel='stylesheet' href='styles.css'></head><body><div class='card'><h2>Вход / Регистрация</h2><div class='row'><input id='email' placeholder='Email'></div><div class='row' style='margin-top:8px'><input id='password' type='password' placeholder='Пароль'></div><div class='row' style='margin-top:10px'><button id='login-btn'>Войти</button><button id='register-btn' class='ghost'>Регистрация</button></div><div id='msg'></div></div>
+<script type='module'>import { getUser, registerUser, withEmail } from './app.js';const $=id=>document.getElementById(id),msg=$('msg');$('login-btn').onclick=async()=>{try{const email=$('email').value.trim(),password=$('password').value;const u=await getUser(email);if(!u||u.password!==password) throw new Error('Неверный логин/пароль');location.href=withEmail(u.verified?'main.html':'verify.html',email);}catch(e){msg.textContent=e.message;msg.className='danger';}};$('register-btn').onclick=async()=>{try{const email=$('email').value.trim(),password=$('password').value;await registerUser(email,password);location.href=withEmail('verify.html',email);}catch(e){msg.textContent=e.message;msg.className='danger';}};</script></body></html>
