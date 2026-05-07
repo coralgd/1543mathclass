@@ -1,11 +1,1 @@
-<!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Main</title><link rel='stylesheet' href='styles.css'></head><body>
-<div class='card'><div class='row' style='justify-content:space-between'><strong id='welcome'></strong><button id='logout' class='ghost'>Выйти</button></div>
-<div class='row' style='margin-top:12px'><a href='vote.html'><button>Страница голосования</button></a><a href='leaderboard.html'><button class='ghost'>Страница лидерборда</button></a></div>
-<p style='margin-top:12px'>Игроки формируются автоматически из зарегистрированных и верифицированных аккаунтов. Вы можете только оценивать других игроков.</p>
-</div>
-<script type='module'>
-import { requireVerified, clearSession } from './app.js';
-const user=await requireVerified(); if(!user) location.href='index.html';
-document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;
-document.getElementById('logout').onclick=()=>{clearSession();location.href='index.html';};
-</script></body></html>
+<!doctype html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='styles.css'></head><body><div class='card'><strong id='w'></strong><div class='row'><a id='v'><button>Голосование</button></a><a id='l'><button class='ghost'>Лидерборд</button></a><a id='m' class='hidden'><button>Проверить</button></a><a href='index.html'><button class='ghost'>Выйти</button></a></div></div><script type='module'>import {getEmailFromUrl,watchUser,withEmail} from './app.js';const e=getEmailFromUrl();if(!e)location.href='index.html';v.href=withEmail('vote.html',e);l.href=withEmail('leaderboard.html',e);watchUser(e,u=>{if(!u)return location.href='index.html';if(!u.verified)return location.href=withEmail('verify.html',e);w.textContent='Вы вошли: '+e;if(u.role==='moder'){m.classList.remove('hidden');m.href=withEmail('moderator.html',e);}else m.classList.add('hidden');});</script></body></html>
