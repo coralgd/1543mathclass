@@ -1,7 +1,9 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Верификация</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'><h2>Верификация аккаунта</h2><p>Доступ на main только после verified=true в БД.</p><button id='check-btn'>Получить/Войти</button><div id='msg'></div></div>
 <script type='module'>
-import { getSessionEmail, getUser } from './app.js';
-const email=getSessionEmail(); if(!email) location.href='index.html';
-document.getElementById('check-btn').onclick=async()=>{const user=await getUser(email);const msg=document.getElementById('msg');if(user&&user.verified===true){location.href='main.html';}else{msg.textContent='Аккаунт пока не верифицирован.';msg.className='danger';}};
+import { getSessionEmail, watchCurrentUser } from './app.js';
+if(!getSessionEmail()) location.href='index.html';
+let current=null;
+watchCurrentUser((u)=>{current=u;if(!u){location.href='index.html';return;}if(u.verified===true){location.href='main.html';}});
+document.getElementById('check-btn').onclick=()=>{const msg=document.getElementById('msg');if(current?.verified===true){location.href='main.html';}else{msg.textContent='Аккаунт пока не верифицирован.';msg.className='danger';}};
 </script></body></html>
