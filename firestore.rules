@@ -1,11 +1,22 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // DEMO MODE (без Firebase Auth):
-    // Позволяет регистрацию/вход через Firestore-документы.
-    // В продакшене обязательно перейти на Firebase Auth.
+    // DEMO MODE (без Firebase Auth).
+    // Рекомендуется перейти на Firebase Auth и custom claims для роли moder.
+
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['email','password','verified','role','state'])
+                    && request.resource.data.role in ['player','moder'];
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['voterEmail','votes','status'])
+                            && request.resource.data.status in ['pending','approved'];
+      allow delete: if false;
     }
   }
 }
