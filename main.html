@@ -4,9 +4,8 @@
 <p style='margin-top:12px'>Игроки формируются автоматически из зарегистрированных и верифицированных аккаунтов. Вы можете только оценивать других игроков.</p>
 </div>
 <script type='module'>
-import { requireVerified, clearSession } from './app.js';
-const user=await requireVerified(); if(!user) location.href='index.html';
-document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;
-if(user.role==='moder') document.getElementById('mod-link').classList.remove('hidden');
+import { getSessionEmail, watchCurrentUser, clearSession } from './app.js';
+if(!getSessionEmail()) location.href='index.html';
+watchCurrentUser((user)=>{if(!user){location.href='index.html';return;}if(user.verified!==true){location.href='verify.html';return;}document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;document.getElementById('mod-link').classList.toggle('hidden',user.role!=='moder');});
 document.getElementById('logout').onclick=()=>{clearSession();location.href='index.html';};
 </script></body></html>

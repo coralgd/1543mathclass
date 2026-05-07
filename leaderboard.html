@@ -1,12 +1,13 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Лидерборд</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'><div class='row' style='justify-content:space-between'><strong id='welcome'></strong><div><a href='main.html'><button class='ghost'>Main</button></a> <a href='vote.html'><button class='ghost'>Голосование</button></a></div></div>
 <table><thead><tr><th>Игрок</th><th>I критерий</th><th>II критерий</th><th>III критерий</th><th>IV критерий</th><th>Общий</th></tr></thead><tbody id='tbody'></tbody></table></div>
+<div id='score-modal' class='modal hidden'><div class='modal-card'><div class='row' style='justify-content:space-between'><h3 id='modal-title'></h3><button id='close-modal' class='ghost'>Закрыть</button></div><div id='modal-content'></div></div></div>
 <script type='module'>
-import { requireVerified, PARAMS, getParamStats, getVerifiedPlayers } from './app.js';
-const user=await requireVerified(); if(!user) location.href='index.html';
-const voteTree=user.state?.approvedVotes||{};
-const players=await getVerifiedPlayers();
-document.getElementById('welcome').textContent=user.email;
-const rows=players.map(p=>{const stats=PARAMS.map(pm=>getParamStats(voteTree,p,pm));const vals=stats.flatMap((_,i)=>Object.values(voteTree[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const c=vals.length,a=c?vals.reduce((x,y)=>x+y,0)/c:0;return{p,stats,a,c};}).sort((a,b)=>b.a-a.a||b.c-a.c||a.p.localeCompare(b.p,'ru'));
-const tbody=document.getElementById('tbody');rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.p}</td><td>${r.stats[0].avg.toFixed(2)} (${r.stats[0].count})</td><td>${r.stats[1].avg.toFixed(2)} (${r.stats[1].count})</td><td>${r.stats[2].avg.toFixed(2)} (${r.stats[2].count})</td><td>${r.stats[3].avg.toFixed(2)} (${r.stats[3].count})</td><td>${r.a.toFixed(2)} (${r.c})</td>`;tbody.appendChild(tr);});
+import { getSessionEmail, watchCurrentUser, PARAMS, getParamStats, getVerifiedPlayers } from './app.js';
+if(!getSessionEmail()) location.href='index.html';
+let voteTree={}; let players=[];
+async function render(){const rows=players.map(p=>{const stats=PARAMS.map(pm=>getParamStats(voteTree,p,pm));const vals=stats.flatMap((_,i)=>Object.values(voteTree[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const c=vals.length,a=c?vals.reduce((x,y)=>x+y,0)/c:0;return{p,stats,a,c};}).sort((a,b)=>b.a-a.a||b.c-a.c||a.p.localeCompare(b.p,'ru'));const tbody=document.getElementById('tbody');tbody.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.className='clickable-row';tr.innerHTML=`<td>${r.p}</td><td>${r.stats[0].avg.toFixed(2)} (${r.stats[0].count})</td><td>${r.stats[1].avg.toFixed(2)} (${r.stats[1].count})</td><td>${r.stats[2].avg.toFixed(2)} (${r.stats[2].count})</td><td>${r.stats[3].avg.toFixed(2)} (${r.stats[3].count})</td><td>${r.a.toFixed(2)} (${r.c})</td>`;tr.onclick=()=>openModal(r.p);tbody.appendChild(tr);});}
+function openModal(player){document.getElementById('modal-title').textContent=`Оценки игрока: ${player}`;let html='';for(const param of PARAMS){html+=`<h4>${param}</h4><table><thead><tr><th>Кто оценил</th><th>Баллы</th></tr></thead><tbody>`;const voters=Object.entries(voteTree[player]||{});if(!voters.length){html+='<tr><td colspan="2">Нет подтвержденных оценок</td></tr>';}else{voters.forEach(([voter,scores])=>{html+=`<tr><td>${voter}</td><td>${Number.isInteger(scores[param])?scores[param]:'—'}</td></tr>`;});}html+='</tbody></table>';}document.getElementById('modal-content').innerHTML=html;document.getElementById('score-modal').classList.remove('hidden');}
+document.getElementById('close-modal').onclick=()=>document.getElementById('score-modal').classList.add('hidden');
+watchCurrentUser(async(user)=>{if(!user){location.href='index.html';return;}if(user.verified!==true){location.href='verify.html';return;}document.getElementById('welcome').textContent=user.email;voteTree=user.state?.approvedVotes||{};players=await getVerifiedPlayers();render();});
 </script></body></html>
