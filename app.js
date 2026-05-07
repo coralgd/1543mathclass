@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, serverTimestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const firebaseConfig = { apiKey:"AIzaSyAxgLF6gMi0S52d0cisPRooLNNCC986Wh4", authDomain:"mathclass-a9815.firebaseapp.com", projectId:"mathclass-a9815", storageBucket:"mathclass-a9815.firebasestorage.app", messagingSenderId:"39490049511", appId:"1:39490049511:web:ad1af15160612405881942" };
 const app = initializeApp(firebaseConfig);
@@ -23,12 +23,12 @@ export async function registerUser(email,password){
   const ref=doc(db,'users',userDocId(email));
   const snap=await getDoc(ref);
   if(snap.exists()) throw new Error('Email уже зарегистрирован');
-  const state={votes:{},activeTab:'vote'};
-  await setDoc(ref,{email,password,verified:false,state});
+  const state={votes:{},approvedVotes:{},activeTab:'vote'};
+  await setDoc(ref,{email,password,verified:false,role:'player',state});
 }
 
-export async function saveState(email,password,verified,state){
-  await setDoc(doc(db,'users',userDocId(email)),{email,password,verified,state});
+export async function saveState(email,password,verified,state,role='player'){
+  await setDoc(doc(db,'users',userDocId(email)),{email,password,verified,role,state});
 }
 
 export async function requireVerified(){
@@ -37,6 +37,11 @@ export async function requireVerified(){
   const user=await getUser(email);
   if(!user || user.verified!==true) return null;
   return user;
+}
+
+export async function getAllUsers(){
+  const snap=await getDocs(collection(db,'users'));
+  return snap.docs.map(d=>d.data()).filter(Boolean).sort((a,b)=>(a.email||'').localeCompare(b.email||'', 'ru'));
 }
 
 export async function getVerifiedPlayers(currentEmail=''){
@@ -49,8 +54,41 @@ export async function getVerifiedPlayers(currentEmail=''){
     .sort((a,b)=>a.localeCompare(b));
 }
 
-export function getParamStats(state,player,param){
-  const all=Object.values(state.votes[player]||{}).map(v=>v[param]).filter(Number.isInteger);
+export async function upsertSubmission(voterEmail,votes){
+  await setDoc(doc(db,'submissions',userDocId(voterEmail)),{voterEmail,votes,status:'pending',updatedAt:serverTimestamp()});
+}
+
+export async function getAllSubmissions(){
+  const snap=await getDocs(collection(db,'submissions'));
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+
+export async function toggleUserVerification(targetEmail,currentValue,actor){
+  const user=await getUser(targetEmail);
+  if(!user) return;
+  await setDoc(doc(db,'users',userDocId(targetEmail)),{...user,verified:!currentValue,verifiedBy:actor,verifiedAt:new Date().toISOString()});
+}
+
+export async function applySubmissionToLeaderboard(submission,moderEmail){
+  const users=await getAllUsers();
+  for(const u of users){
+    const state=u.state||{};
+    if(!state.approvedVotes) state.approvedVotes={};
+    Object.keys(state.approvedVotes).forEach(player=>{
+      if(state.approvedVotes[player]?.[submission.voterEmail]) delete state.approvedVotes[player][submission.voterEmail];
+      if(Object.keys(state.approvedVotes[player]||{}).length===0) delete state.approvedVotes[player];
+    });
+    for(const [player,criteria] of Object.entries(submission.votes||{})){
+      if(!state.approvedVotes[player]) state.approvedVotes[player]={};
+      state.approvedVotes[player][submission.voterEmail]=criteria;
+    }
+    await saveState(u.email,u.password,u.verified,state,u.role||'player');
+  }
+  await setDoc(doc(db,'submissions',userDocId(submission.voterEmail)),{...submission,status:'approved',approvedBy:moderEmail,approvedAt:new Date().toISOString(),updatedAt:deleteField()});
+}
+
+export function getParamStats(voteTree,player,param){
+  const all=Object.values(voteTree[player]||{}).map(v=>v[param]).filter(Number.isInteger);
   const c=all.length;
   return {avg:c?all.reduce((a,b)=>a+b,0)/c:0,count:c};
 }
