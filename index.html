@@ -5,22 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Голосование игроков</title>
   <style>
-    :root { font-family: Arial, sans-serif; }
+    :root { font-family: Inter, Arial, sans-serif; }
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fb; color: #1f2937; }
-    .card { width: min(92vw, 760px); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 24px; }
-    h1 { margin-top: 0; font-size: 1.5rem; }
+    .card { width: min(94vw, 920px); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 24px; }
+    h1,h2,h3 { margin: 0 0 8px; }
     .row { display: flex; gap: 10px; align-items: center; }
     input[type="text"] { flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
-    button { padding: 10px 14px; border: 0; border-radius: 8px; cursor: pointer; background: #2563eb; color: #fff; font-size: 1rem; }
+    button { padding: 10px 14px; border: 0; border-radius: 8px; cursor: pointer; background: #2563eb; color: #fff; font-size: .95rem; }
     button.secondary { background: #4b5563; }
     button.ghost { background: #e5e7eb; color: #111827; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
     .hidden { display: none; }
-    .hint { color: #6b7280; font-size: .95rem; }
+    .hint { color: #6b7280; font-size: .92rem; }
+    .danger { color: #b91c1c; }
+    .ok { color: #166534; }
     .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
     .tabs { display: flex; gap: 8px; margin: 14px 0; }
-    .players { margin-top: 8px; }
-    .player { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f2f6; }
-    .score { width: 90px; padding: 7px 8px; border-radius: 8px; border: 1px solid #d1d5db; }
+    .players { margin-top: 8px; display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:8px; }
+    .player-pick { border:1px solid #e5e7eb; border-radius:8px; padding:8px; }
+    .stage { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; margin-top: 12px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f2f6; }
     th { font-size: .9rem; color: #6b7280; }
@@ -40,7 +43,7 @@
     <div class="topbar">
       <div>
         <strong id="welcome"></strong>
-        <div class="hint">Все данные сохраняются локально в браузере.</div>
+        <div class="hint">Голосование по местам 1..10 (1 место = 9 баллов, 10 место = 0 баллов).</div>
       </div>
       <button class="secondary" id="logout-btn">Выйти</button>
     </div>
@@ -55,158 +58,130 @@
       <button id="leaderboard-tab-btn" class="ghost">Лидерборд</button>
     </div>
 
-    <div id="vote-panel" class="players"></div>
+    <div id="vote-panel">
+      <div id="vote-lock" class="hint danger"></div>
+      <div id="vote-stage" class="stage hidden">
+        <h3 id="stage-title"></h3>
+        <p id="stage-hint" class="hint"></p>
+        <div id="selected-info" class="hint"></div>
+        <div id="pick-list" class="players"></div>
+        <div class="row" style="margin-top:12px;">
+          <button id="confirm-stage-btn">Подтвердить место</button>
+          <button id="skip-stage-btn" class="ghost">Пропустить место</button>
+        </div>
+        <p class="hint" id="progress"></p>
+      </div>
+      <div id="finish-wrap" class="stage hidden">
+        <h3>Завершение голосования</h3>
+        <p id="finish-hint" class="hint"></p>
+        <button id="finish-vote-btn">Завершить и сохранить голос</button>
+      </div>
+    </div>
+
     <div id="leaderboard-panel" class="hidden">
       <table>
-        <thead>
-          <tr><th>Игрок</th><th>Среднее</th><th>Оценок</th></tr>
-        </thead>
+        <thead><tr><th>Игрок</th><th>Среднее</th><th>Оценок</th></tr></thead>
         <tbody id="leaderboard-body"></tbody>
       </table>
     </div>
   </div>
 
-  <script>
-    const STORAGE_KEY = 'local-vote-app-v2';
-    const defaultPlayers = ['Игрок_1', 'Игрок_2', 'Игрок_3'];
-    const state = loadState();
+<script>
+const STORAGE_KEY = 'local-vote-app-v4';
+const defaultPlayers = ['Игрок_1','Игрок_2','Игрок_3'];
+const POINTS = [9,8,7,6,5,4,3,2,1,0];
+const WORST_STAGE_FROM = 8;
+const state = loadState();
+let draft = null;
 
-    const loginScreen = document.getElementById('login-screen');
-    const appScreen = document.getElementById('app-screen');
-    const nicknameInput = document.getElementById('nickname');
-    const loginBtn = document.getElementById('login-btn');
-    const welcome = document.getElementById('welcome');
-    const logoutBtn = document.getElementById('logout-btn');
-    const votePanel = document.getElementById('vote-panel');
-    const leaderboardPanel = document.getElementById('leaderboard-panel');
-    const leaderboardBody = document.getElementById('leaderboard-body');
-    const voteTabBtn = document.getElementById('vote-tab-btn');
-    const leaderboardTabBtn = document.getElementById('leaderboard-tab-btn');
-    const newPlayerInput = document.getElementById('new-player');
-    const addPlayerBtn = document.getElementById('add-player-btn');
+const $ = (id)=>document.getElementById(id);
+const loginScreen=$('login-screen'), appScreen=$('app-screen'), nicknameInput=$('nickname'), loginBtn=$('login-btn');
+const welcome=$('welcome'), logoutBtn=$('logout-btn'), newPlayerInput=$('new-player'), addPlayerBtn=$('add-player-btn');
+const voteTabBtn=$('vote-tab-btn'), leaderboardTabBtn=$('leaderboard-tab-btn');
+const votePanel=$('vote-panel'), leaderboardPanel=$('leaderboard-panel'), leaderboardBody=$('leaderboard-body');
+const voteLock=$('vote-lock'), voteStage=$('vote-stage'), stageTitle=$('stage-title'), stageHint=$('stage-hint'), selectedInfo=$('selected-info');
+const pickList=$('pick-list'), confirmStageBtn=$('confirm-stage-btn'), skipStageBtn=$('skip-stage-btn'), progress=$('progress');
+const finishWrap=$('finish-wrap'), finishHint=$('finish-hint'), finishVoteBtn=$('finish-vote-btn');
 
-    function loadState() {
-      try {
-        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-        return {
-          currentUser: parsed.currentUser || '',
-          players: Array.isArray(parsed.players) && parsed.players.length ? parsed.players : defaultPlayers,
-          votes: parsed.votes && typeof parsed.votes === 'object' ? parsed.votes : {},
-          activeTab: parsed.activeTab === 'leaderboard' ? 'leaderboard' : 'vote'
-        };
-      } catch {
-        return { currentUser: '', players: defaultPlayers, votes: {}, activeTab: 'vote' };
-      }
+function loadState(){try{const p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return{currentUser:p.currentUser||'',players:Array.isArray(p.players)&&p.players.length?p.players:defaultPlayers,votes:p.votes&&typeof p.votes==='object'?p.votes:{},activeTab:p.activeTab==='leaderboard'?'leaderboard':'vote'};}catch{return{currentUser:'',players:defaultPlayers,votes:{},activeTab:'vote'};}}
+function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function ensurePlayerVoteMap(player){ if(!state.votes[player]||typeof state.votes[player]!=='object') state.votes[player]={}; }
+
+function initDraft(){ draft={ mode:'main', stage:1, picks:{}, worstIndex:0, worstEmpties:[] }; }
+function playersAtPlace(place){ return Object.entries(draft.picks).filter(([,p])=>p===place).map(([n])=>n); }
+function placesCount(){ const set=new Set(Object.values(draft.picks)); return set.size; }
+function emptyPlaces(){ const res=[]; for(let i=1;i<=10;i++) if(playersAtPlace(i).length===0) res.push(i); return res; }
+
+function render(){ const inUser=Boolean(state.currentUser); loginScreen.classList.toggle('hidden',inUser); appScreen.classList.toggle('hidden',!inUser); if(inUser) welcome.textContent=`Вы вошли как: ${state.currentUser}`; if(!draft) initDraft(); renderVoteFlow(); renderLeaderboard(); switchTab(state.activeTab,false); }
+
+function startWorstPhase(){ draft.mode='worst'; draft.worstEmpties=emptyPlaces(); draft.worstIndex=0; }
+
+function renderVoteFlow(){
+  const locked=state.players.length<10;
+  voteLock.textContent=locked?`Голосование заблокировано: нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Сначала распределите игроков по местам 1..10, затем (если есть пустые места) начнётся стадия выбора худших для дозаполнения.';
+  voteLock.className=`hint ${locked?'danger':'ok'}`;
+  voteStage.classList.toggle('hidden',locked);
+  finishWrap.classList.toggle('hidden',locked);
+  if(locked) return;
+
+  if(draft.mode==='main'){
+    stageTitle.textContent=`Основная стадия ${draft.stage}/10: место ${draft.stage} (${POINTS[draft.stage-1]} баллов)`;
+    stageHint.textContent=`Выберите игроков на это место. Пропуск разрешён только с ${WORST_STAGE_FROM}-го места.`;
+    selectedInfo.textContent=`Сейчас выбрано: ${playersAtPlace(draft.stage).join(', ') || 'никого'}`;
+    progress.textContent=`Игроков распределено: ${Object.keys(draft.picks).length}/${state.players.length}. Занято мест: ${placesCount()}/10.`;
+    skipStageBtn.disabled=draft.stage<WORST_STAGE_FROM;
+    confirmStageBtn.textContent=draft.stage<10?'Подтвердить место':'Завершить основную стадию';
+    renderPickListMain();
+    finishHint.textContent=''; finishVoteBtn.disabled=true;
+  } else {
+    const empties=draft.worstEmpties;
+    if(draft.worstIndex>=empties.length){
+      const still=emptyPlaces();
+      finishHint.textContent = still.length ? `Нельзя завершить: пустые места ${still.join(', ')}. На стадии худших сдвиньте игроков вниз, чтобы заполнить каждое место.` : 'Все 10 мест заполнены. Можно завершить голосование.';
+      finishVoteBtn.disabled = still.length>0;
+      stageTitle.textContent='Стадия выбора худших завершена';
+      stageHint.textContent=''; selectedInfo.textContent=''; pickList.innerHTML=''; progress.textContent='';
+      return;
     }
+    const place=empties[draft.worstIndex];
+    const candidates=Object.entries(draft.picks).filter(([,pl])=>pl<place).map(([name])=>name);
+    stageTitle.textContent=`Стадия худших ${draft.worstIndex+1}/${empties.length}: заполнение пустого места ${place}`;
+    stageHint.textContent='Выберите одного худшего игрока из мест выше, чтобы сдвинуть его на это место. Можно пропустить и перейти к следующему пустому месту.';
+    selectedInfo.textContent='Если пропустить, место останется пустым и завершить голосование не получится.';
+    progress.textContent=`Пустые места сейчас: ${emptyPlaces().join(', ') || 'нет'}`;
+    renderPickListWorst(candidates, place);
+    skipStageBtn.disabled=false;
+    confirmStageBtn.textContent='Подтвердить перенос';
+    finishVoteBtn.disabled=true;
+  }
+}
 
-    function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function renderPickListMain(){
+  pickList.innerHTML='';
+  const unavailable = new Set(Object.entries(draft.picks).filter(([,pl])=>pl!==draft.stage).map(([n])=>n));
+  state.players.forEach(player=>{ const lab=document.createElement('label'); lab.className='player-pick'; const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=playersAtPlace(draft.stage).includes(player); cb.disabled=unavailable.has(player); cb.onchange=()=>{ if(cb.checked) draft.picks[player]=draft.stage; else if(draft.picks[player]===draft.stage) delete draft.picks[player]; renderVoteFlow(); }; lab.append(cb,document.createTextNode(' '+player)); pickList.appendChild(lab); });
+}
 
-    function ensurePlayerVoteMap(player) {
-      if (!state.votes[player] || typeof state.votes[player] !== 'object') state.votes[player] = {};
-    }
+function renderPickListWorst(candidates, place){
+  pickList.innerHTML='';
+  const current=playersAtPlace(place)[0]||'';
+  candidates.forEach(player=>{ const lab=document.createElement('label'); lab.className='player-pick'; const rb=document.createElement('input'); rb.type='radio'; rb.name='worst'; rb.checked=current===player; rb.onchange=()=>{ draft.picks[player]=place; renderVoteFlow(); }; lab.append(rb,document.createTextNode(' '+player)); pickList.appendChild(lab); });
+}
 
-    function render() {
-      const isLoggedIn = Boolean(state.currentUser);
-      loginScreen.classList.toggle('hidden', isLoggedIn);
-      appScreen.classList.toggle('hidden', !isLoggedIn);
-      if (isLoggedIn) welcome.textContent = `Вы вошли как: ${state.currentUser}`;
-      renderVotes();
-      renderLeaderboard();
-      switchTab(state.activeTab);
-    }
+function finalizeVote(){ for(const p of state.players) ensurePlayerVoteMap(p); for(const p of state.players){ const pl=draft.picks[p]; state.votes[p][state.currentUser]=POINTS[pl-1]; } saveState(); initDraft(); renderVoteFlow(); renderLeaderboard(); }
+function getStats(player){ ensurePlayerVoteMap(player); const vals=Object.values(state.votes[player]).filter(v=>Number.isInteger(v)); const c=vals.length; return {avg:c?vals.reduce((a,b)=>a+b,0)/c:0,count:c}; }
+function renderLeaderboard(){ const rows=state.players.map(p=>({player:p,...getStats(p)})).sort((a,b)=>b.avg-a.avg||b.count-a.count||a.player.localeCompare(b.player,'ru')); leaderboardBody.innerHTML=''; rows.forEach(r=>{const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.player}</td><td>${r.avg.toFixed(2)}</td><td>${r.count}</td>`; leaderboardBody.appendChild(tr);}); }
+function switchTab(tab,save=true){ state.activeTab=tab; const vote=tab==='vote'; votePanel.classList.toggle('hidden',!vote); leaderboardPanel.classList.toggle('hidden',vote); voteTabBtn.className=vote?'':'ghost'; leaderboardTabBtn.className=vote?'ghost':''; if(save) saveState(); }
 
-    function renderVotes() {
-      votePanel.innerHTML = '';
-      state.players.forEach(player => {
-        ensurePlayerVoteMap(player);
-        const row = document.createElement('div');
-        row.className = 'player';
+loginBtn.onclick=()=>{const n=nicknameInput.value.trim(); if(!n) return; state.currentUser=n; if(!state.players.includes(n)) state.players.push(n); saveState(); initDraft(); render(); nicknameInput.value='';};
+addPlayerBtn.onclick=()=>{const n=newPlayerInput.value.trim(); if(!n||state.players.includes(n)) return; state.players.push(n); ensurePlayerVoteMap(n); saveState(); render(); newPlayerInput.value='';};
+voteTabBtn.onclick=()=>switchTab('vote'); leaderboardTabBtn.onclick=()=>switchTab('leaderboard');
+logoutBtn.onclick=()=>{state.currentUser=''; saveState(); render();};
+confirmStageBtn.onclick=()=>{ if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else startWorstPhase(); } else { draft.worstIndex+=1; } renderVoteFlow(); };
+skipStageBtn.onclick=()=>{ if(draft.mode==='main' && draft.stage<WORST_STAGE_FROM) return; if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else startWorstPhase(); } else { draft.worstIndex+=1; } renderVoteFlow(); };
+finishVoteBtn.onclick=()=>{ if(emptyPlaces().length===0) finalizeVote(); else renderVoteFlow(); };
 
-        const name = document.createElement('span');
-        name.textContent = player;
-
-        const select = document.createElement('select');
-        select.className = 'score';
-        for (let i = 0; i <= 9; i++) {
-          const option = document.createElement('option');
-          option.value = String(i);
-          option.textContent = String(i);
-          select.appendChild(option);
-        }
-
-        const myVote = state.votes[player][state.currentUser];
-        select.value = Number.isInteger(myVote) ? String(myVote) : '0';
-
-        select.addEventListener('change', () => {
-          state.votes[player][state.currentUser] = Number(select.value);
-          saveState();
-          renderLeaderboard();
-        });
-
-        row.append(name, select);
-        votePanel.appendChild(row);
-      });
-    }
-
-    function getStats(player) {
-      ensurePlayerVoteMap(player);
-      const values = Object.values(state.votes[player]).filter(v => Number.isInteger(v));
-      const count = values.length;
-      const avg = count ? values.reduce((a,b)=>a+b,0) / count : 0;
-      return { avg, count };
-    }
-
-    function renderLeaderboard() {
-      const rows = state.players.map(player => ({ player, ...getStats(player) }))
-        .sort((a,b) => b.avg - a.avg || b.count - a.count || a.player.localeCompare(b.player, 'ru'));
-      leaderboardBody.innerHTML = '';
-      rows.forEach(({player, avg, count}) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${player}</td><td>${avg.toFixed(2)}</td><td>${count}</td>`;
-        leaderboardBody.appendChild(tr);
-      });
-    }
-
-    function switchTab(tab) {
-      state.activeTab = tab;
-      const voteActive = tab === 'vote';
-      votePanel.classList.toggle('hidden', !voteActive);
-      leaderboardPanel.classList.toggle('hidden', voteActive);
-      voteTabBtn.className = voteActive ? '' : 'ghost';
-      leaderboardTabBtn.className = voteActive ? 'ghost' : '';
-      saveState();
-    }
-
-    loginBtn.addEventListener('click', () => {
-      const nick = nicknameInput.value.trim();
-      if (!nick) return;
-      state.currentUser = nick;
-      if (!state.players.includes(nick)) state.players.push(nick);
-      saveState();
-      render();
-      nicknameInput.value = '';
-    });
-
-    addPlayerBtn.addEventListener('click', () => {
-      const nick = newPlayerInput.value.trim();
-      if (!nick || state.players.includes(nick)) return;
-      state.players.push(nick);
-      ensurePlayerVoteMap(nick);
-      saveState();
-      render();
-      newPlayerInput.value = '';
-    });
-
-    voteTabBtn.addEventListener('click', () => switchTab('vote'));
-    leaderboardTabBtn.addEventListener('click', () => switchTab('leaderboard'));
-
-    logoutBtn.addEventListener('click', () => {
-      state.currentUser = '';
-      saveState();
-      render();
-    });
-
-    render();
-  </script>
+render();
+</script>
 </body>
 </html>
