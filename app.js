@@ -18,6 +18,20 @@ export async function getUser(email){ const snap=await getDoc(doc(db,'users',use
 export function watchCurrentUser(cb){ const email=getSessionEmail(); if(!email) return ()=>{}; return onSnapshot(doc(db,'users',userDocId(email)),(snap)=>cb(snap.exists()?snap.data():null)); }
 export function watchAllUsers(cb){ return onSnapshot(collection(db,'users'),(snap)=>cb(snap.docs.map(d=>d.data()).filter(Boolean).sort((a,b)=>(a.email||'').localeCompare(b.email||'','ru')))); }
 
+export function watchCurrentUser(cb){
+  const email=getSessionEmail();
+  if(!email) return ()=>{};
+  return onSnapshot(doc(db,'users',userDocId(email)),(snap)=>cb(snap.exists()?snap.data():null));
+}
+
+export function watchAllUsers(cb){
+  return onSnapshot(collection(db,'users'),(snap)=>cb(snap.docs.map(d=>d.data()).filter(Boolean).sort((a,b)=>(a.email||'').localeCompare(b.email||'','ru'))));
+}
+
+export function watchSubmissions(cb){
+  return onSnapshot(collection(db,'submissions'),(snap)=>cb(snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.voterEmail||'').localeCompare(b.voterEmail||''))));
+}
+
 export async function registerUser(email,password){
   const ref=doc(db,'users',userDocId(email)); const snap=await getDoc(ref);
   if(snap.exists()) throw new Error('Email уже зарегистрирован');
