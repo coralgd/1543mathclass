@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Голосование игроков</title>
+  <style>
+    :root { font-family: Arial, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f7fb; color: #1f2937; }
+    .card { width: min(92vw, 760px); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.08); padding: 24px; }
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    input[type="text"] { flex: 1; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
+    button { padding: 10px 14px; border: 0; border-radius: 8px; cursor: pointer; background: #2563eb; color: #fff; font-size: 1rem; }
+    button.secondary { background: #4b5563; }
+    button.ghost { background: #e5e7eb; color: #111827; }
+    .hidden { display: none; }
+    .hint { color: #6b7280; font-size: .95rem; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
+    .tabs { display: flex; gap: 8px; margin: 14px 0; }
+    .players { margin-top: 8px; }
+    .player { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f2f6; }
+    .score { width: 90px; padding: 7px 8px; border-radius: 8px; border: 1px solid #d1d5db; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f0f2f6; }
+    th { font-size: .9rem; color: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="card" id="login-screen">
+    <h1>Начальный экран</h1>
+    <p class="hint">Введите ник и нажмите «Войти».</p>
+    <div class="row">
+      <input id="nickname" type="text" placeholder="Ваш ник" maxlength="24" />
+      <button id="login-btn">Войти</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="app-screen">
+    <div class="topbar">
+      <div>
+        <strong id="welcome"></strong>
+        <div class="hint">Все данные сохраняются локально в браузере.</div>
+      </div>
+      <button class="secondary" id="logout-btn">Выйти</button>
+    </div>
+
+    <div class="row" style="margin-bottom:12px;">
+      <input id="new-player" type="text" placeholder="Ник нового игрока" maxlength="24" />
+      <button id="add-player-btn">Добавить</button>
+    </div>
+
+    <div class="tabs">
+      <button id="vote-tab-btn">Голосовать</button>
+      <button id="leaderboard-tab-btn" class="ghost">Лидерборд</button>
+    </div>
+
+    <div id="vote-panel" class="players"></div>
+    <div id="leaderboard-panel" class="hidden">
+      <table>
+        <thead>
+          <tr><th>Игрок</th><th>Среднее</th><th>Оценок</th></tr>
+        </thead>
+        <tbody id="leaderboard-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'local-vote-app-v2';
+    const defaultPlayers = ['Игрок_1', 'Игрок_2', 'Игрок_3'];
+    const state = loadState();
+
+    const loginScreen = document.getElementById('login-screen');
+    const appScreen = document.getElementById('app-screen');
+    const nicknameInput = document.getElementById('nickname');
+    const loginBtn = document.getElementById('login-btn');
+    const welcome = document.getElementById('welcome');
+    const logoutBtn = document.getElementById('logout-btn');
+    const votePanel = document.getElementById('vote-panel');
+    const leaderboardPanel = document.getElementById('leaderboard-panel');
+    const leaderboardBody = document.getElementById('leaderboard-body');
+    const voteTabBtn = document.getElementById('vote-tab-btn');
+    const leaderboardTabBtn = document.getElementById('leaderboard-tab-btn');
+    const newPlayerInput = document.getElementById('new-player');
+    const addPlayerBtn = document.getElementById('add-player-btn');
+
+    function loadState() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        return {
+          currentUser: parsed.currentUser || '',
+          players: Array.isArray(parsed.players) && parsed.players.length ? parsed.players : defaultPlayers,
+          votes: parsed.votes && typeof parsed.votes === 'object' ? parsed.votes : {},
+          activeTab: parsed.activeTab === 'leaderboard' ? 'leaderboard' : 'vote'
+        };
+      } catch {
+        return { currentUser: '', players: defaultPlayers, votes: {}, activeTab: 'vote' };
+      }
+    }
+
+    function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+
+    function ensurePlayerVoteMap(player) {
+      if (!state.votes[player] || typeof state.votes[player] !== 'object') state.votes[player] = {};
+    }
+
+    function render() {
+      const isLoggedIn = Boolean(state.currentUser);
+      loginScreen.classList.toggle('hidden', isLoggedIn);
+      appScreen.classList.toggle('hidden', !isLoggedIn);
+      if (isLoggedIn) welcome.textContent = `Вы вошли как: ${state.currentUser}`;
+      renderVotes();
+      renderLeaderboard();
+      switchTab(state.activeTab);
+    }
+
+    function renderVotes() {
+      votePanel.innerHTML = '';
+      state.players.forEach(player => {
+        ensurePlayerVoteMap(player);
+        const row = document.createElement('div');
+        row.className = 'player';
+
+        const name = document.createElement('span');
+        name.textContent = player;
+
+        const select = document.createElement('select');
+        select.className = 'score';
+        for (let i = 0; i <= 9; i++) {
+          const option = document.createElement('option');
+          option.value = String(i);
+          option.textContent = String(i);
+          select.appendChild(option);
+        }
+
+        const myVote = state.votes[player][state.currentUser];
+        select.value = Number.isInteger(myVote) ? String(myVote) : '0';
+
+        select.addEventListener('change', () => {
+          state.votes[player][state.currentUser] = Number(select.value);
+          saveState();
+          renderLeaderboard();
+        });
+
+        row.append(name, select);
+        votePanel.appendChild(row);
+      });
+    }
+
+    function getStats(player) {
+      ensurePlayerVoteMap(player);
+      const values = Object.values(state.votes[player]).filter(v => Number.isInteger(v));
+      const count = values.length;
+      const avg = count ? values.reduce((a,b)=>a+b,0) / count : 0;
+      return { avg, count };
+    }
+
+    function renderLeaderboard() {
+      const rows = state.players.map(player => ({ player, ...getStats(player) }))
+        .sort((a,b) => b.avg - a.avg || b.count - a.count || a.player.localeCompare(b.player, 'ru'));
+      leaderboardBody.innerHTML = '';
+      rows.forEach(({player, avg, count}) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${player}</td><td>${avg.toFixed(2)}</td><td>${count}</td>`;
+        leaderboardBody.appendChild(tr);
+      });
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      const voteActive = tab === 'vote';
+      votePanel.classList.toggle('hidden', !voteActive);
+      leaderboardPanel.classList.toggle('hidden', voteActive);
+      voteTabBtn.className = voteActive ? '' : 'ghost';
+      leaderboardTabBtn.className = voteActive ? 'ghost' : '';
+      saveState();
+    }
+
+    loginBtn.addEventListener('click', () => {
+      const nick = nicknameInput.value.trim();
+      if (!nick) return;
+      state.currentUser = nick;
+      if (!state.players.includes(nick)) state.players.push(nick);
+      saveState();
+      render();
+      nicknameInput.value = '';
+    });
+
+    addPlayerBtn.addEventListener('click', () => {
+      const nick = newPlayerInput.value.trim();
+      if (!nick || state.players.includes(nick)) return;
+      state.players.push(nick);
+      ensurePlayerVoteMap(nick);
+      saveState();
+      render();
+      newPlayerInput.value = '';
+    });
+
+    voteTabBtn.addEventListener('click', () => switchTab('vote'));
+    leaderboardTabBtn.addEventListener('click', () => switchTab('leaderboard'));
+
+    logoutBtn.addEventListener('click', () => {
+      state.currentUser = '';
+      saveState();
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>
