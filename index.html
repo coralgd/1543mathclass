@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Голосование игроков</title>
+<style>
+body{font-family:Arial;background:#f5f7fb;margin:0;padding:20px}.card{max-width:980px;margin:auto;background:#fff;padding:18px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+.hidden{display:none}.row{display:flex;gap:8px;align-items:center}.tabs{display:flex;gap:8px;margin:10px 0}button{padding:8px 12px;border:0;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer}.ghost{background:#e5e7eb;color:#111}
+input{padding:8px;border-radius:8px;border:1px solid #d1d5db}.line{padding:9px;border:1px solid #d1d5db;border-radius:8px;margin:6px 0;cursor:pointer}.sel{background:#bfdbfe;border-color:#2563eb}.danger{color:#b91c1c}.ok{color:#166534}
+.scroll{max-height:320px;overflow-y:auto;padding-right:6px}.scroll::-webkit-scrollbar{width:10px}.scroll::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+</style></head><body>
+<div class="card" id="login-screen">
+  <h2>Вход / Регистрация</h2>
+  <div class="row"><input id="email" placeholder="Email"/></div>
+  <div class="row" style="margin-top:8px"><input id="password" type="password" placeholder="Пароль"/></div>
+  <div class="row" style="margin-top:10px"><button id="login-btn">Войти</button><button id="register-btn" class="ghost">Регистрация</button></div>
+  <div id="auth-msg"></div>
+</div>
+<div class="card hidden" id="app-screen">
+  <div class="row" style="justify-content:space-between"><strong id="welcome"></strong><button id="logout-btn" class="ghost">Выйти</button></div>
+  <div class="row" style="margin-top:8px"><input id="new-player" placeholder="Ник нового игрока"/><button id="add-player-btn">Добавить</button></div>
+  <div class="tabs"><button id="vote-tab-btn">Голосовать</button><button id="leaderboard-tab-btn" class="ghost">Лидерборд</button></div>
+  <div id="vote-panel">
+    <div id="vote-lock"></div><h3 id="param-title"></h3><h4 id="stage-title"></h4><div id="stage-help"></div><div id="stage-stats"></div>
+    <div id="candidate-list" class="scroll"></div>
+    <div class="row"><button id="back-btn" class="ghost">Назад</button><button id="confirm-stage-btn">Подтвердить место</button></div>
+    <div id="preview" class="hidden scroll"></div><button id="finish-btn" class="hidden">Подтвердить критерий</button>
+  </div>
+  <div id="leaderboard-panel" class="hidden"><table><thead><tr><th>Игрок</th><th>I критерий</th><th>II критерий</th><th>III критерий</th><th>IV критерий</th><th>Общий</th></tr></thead><tbody id="leaderboard-body"></tbody></table></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const firebaseConfig = { apiKey:"AIzaSyAxgLF6gMi0S52d0cisPRooLNNCC986Wh4", authDomain:"mathclass-a9815.firebaseapp.com", projectId:"mathclass-a9815", storageBucket:"mathclass-a9815.firebasestorage.app", messagingSenderId:"39490049511", appId:"1:39490049511:web:ad1af15160612405881942" };
+const app = initializeApp(firebaseConfig); const db = getFirestore(app);
+
+const POINTS=[9,8,7,6,5,4,3,2,1,0],PARAMS=['I критерий','II критерий','III критерий','IV критерий'];
+let state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'}; let draft=null; let currentUser=null;
+const $=id=>document.getElementById(id);
+const loginScreen=$('login-screen'),appScreen=$('app-screen'),emailInput=$('email'),passwordInput=$('password'),authMsg=$('auth-msg');
+const loginBtn=$('login-btn'),registerBtn=$('register-btn'),welcome=$('welcome'),logoutBtn=$('logout-btn'),newPlayerInput=$('new-player'),addPlayerBtn=$('add-player-btn');
+const voteTabBtn=$('vote-tab-btn'),leaderboardTabBtn=$('leaderboard-tab-btn'),votePanel=$('vote-panel'),leaderboardPanel=$('leaderboard-panel'),leaderboardBody=$('leaderboard-body');
+const voteLock=$('vote-lock'),paramTitle=$('param-title'),stageTitle=$('stage-title'),stageHelp=$('stage-help'),stageStats=$('stage-stats'),candidateList=$('candidate-list'),backBtn=$('back-btn'),confirmStageBtn=$('confirm-stage-btn'),preview=$('preview'),finishBtn=$('finish-btn');
+
+function resetDraft(){ draft={param:0,place:1,remaining:[...state.players],selected:new Set(),groups:{}}; }
+function resetParamDraft(){ draft.place=1; draft.remaining=[...state.players]; draft.selected=new Set(); draft.groups={}; }
+function ensureVote(player,uid){ if(!state.votes[player]) state.votes[player]={}; if(!state.votes[player][uid]) state.votes[player][uid]={}; }
+
+function userDocId(email){ return email.toLowerCase().replace(/[^a-z0-9@._-]/g,'_'); }
+async function loadUserData(email){
+  const ref=doc(db,'users',userDocId(email)); const snap=await getDoc(ref);
+  if(snap.exists()) state=snap.data().state || state;
+  if(!state.players?.length) state.players=['Игрок_1','Игрок_2','Игрок_3'];
+  if(!state.votes) state.votes={}; if(!state.activeTab) state.activeTab='vote';
+}
+async function saveUserData(){ if(!currentUser) return; await setDoc(doc(db,'users',userDocId(currentUser.email)),{email:currentUser.email,password:currentUser.password,state}); }
+
+function render(){
+  const logged=!!currentUser; loginScreen.classList.toggle('hidden',logged); appScreen.classList.toggle('hidden',!logged);
+  if(logged) welcome.textContent=`Вы вошли: ${currentUser.email}`;
+  if(!draft) resetDraft(); renderVote(); renderLeaderboard(); switchTab(state.activeTab,false);
+}
+function renderVote(){
+  const locked=state.players.length<10; voteLock.textContent=locked?`Нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Выбирайте лучших из оставшихся по шагам.'; voteLock.className=locked?'danger':'ok';
+  if(locked){candidateList.innerHTML=''; confirmStageBtn.disabled=true; finishBtn.classList.add('hidden'); return;} confirmStageBtn.disabled=false;
+  paramTitle.textContent=`${PARAMS[draft.param]} (${draft.param+1}/4)`;
+  if(draft.place<=10){const rem=draft.remaining.length,placesLeft=11-draft.place,maxSelect=rem-(placesLeft-1);stageTitle.textContent=`Место ${draft.place} (${POINTS[draft.place-1]} баллов)`;stageHelp.textContent='Клик по строке выбирает/снимает игрока';stageStats.textContent=`Выберите 1..${maxSelect}`;renderCandidates(maxSelect);preview.classList.add('hidden');finishBtn.classList.add('hidden');}
+  else renderPreview();
+}
+function renderCandidates(maxSelect){candidateList.innerHTML='';draft.remaining.forEach(player=>{const d=document.createElement('div');const sel=draft.selected.has(player);d.className='line'+(sel?' sel':'');d.textContent=player;d.onclick=()=>{if(sel)draft.selected.delete(player);else{if(draft.selected.size>=maxSelect)return;draft.selected.add(player);}renderVote();};candidateList.appendChild(d);});}
+function confirmStage(){const rem=draft.remaining.length,placesLeft=11-draft.place,maxSelect=rem-(placesLeft-1),pick=[...draft.selected];if(pick.length<1||pick.length>maxSelect){alert(`Выберите 1..${maxSelect}`);return;}draft.groups[draft.place]=pick;draft.remaining=draft.remaining.filter(p=>!draft.selected.has(p));draft.selected=new Set();draft.place++;renderVote();}
+function goBack(){if(draft.place<=1)return;const prev=draft.place-1;if(draft.groups[prev]){draft.remaining=[...draft.groups[prev],...draft.remaining];delete draft.groups[prev];}draft.place=prev;draft.selected=new Set();renderVote();}
+function renderPreview(){let html=`<h3>Итог: ${PARAMS[draft.param]}</h3>`;for(let i=1;i<=10;i++){const g=draft.groups[i]||[];html+=`<div>${i} место: ${g.join(', ')||'—'}</div>`;}preview.innerHTML=html;preview.classList.remove('hidden');finishBtn.classList.remove('hidden');candidateList.innerHTML='';stageTitle.textContent='Проверьте и подтвердите';stageHelp.textContent='';stageStats.textContent='';}
+async function finalizeParam(){for(let i=1;i<=10;i++) for(const p of (draft.groups[i]||[])){ensureVote(p,currentUser.email);state.votes[p][currentUser.email][PARAMS[draft.param]]=POINTS[i-1];} await saveUserData(); if(draft.param<3){draft.param++;resetParamDraft();renderVote();}else{resetDraft();await saveUserData();renderVote();renderLeaderboard();alert('Все критерии сохранены');}}
+
+function getParamStats(player,param){const all=Object.values(state.votes[player]||{}).map(v=>v[param]).filter(Number.isInteger);const c=all.length;return{avg:c?all.reduce((a,b)=>a+b,0)/c:0,count:c};}
+function renderLeaderboard(){const rows=state.players.map(p=>{const stats=PARAMS.map(pm=>getParamStats(p,pm));const vals=stats.flatMap((_,i)=>Object.values(state.votes[p]||{}).map(v=>v[PARAMS[i]]).filter(Number.isInteger));const tc=vals.length,ta=tc?vals.reduce((a,b)=>a+b,0)/tc:0;return{player:p,stats,ta,tc};}).sort((a,b)=>b.ta-a.ta||b.tc-a.tc||a.player.localeCompare(b.player,'ru')); leaderboardBody.innerHTML=''; rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.player}</td><td>${r.stats[0].avg.toFixed(2)} (${r.stats[0].count})</td><td>${r.stats[1].avg.toFixed(2)} (${r.stats[1].count})</td><td>${r.stats[2].avg.toFixed(2)} (${r.stats[2].count})</td><td>${r.stats[3].avg.toFixed(2)} (${r.stats[3].count})</td><td>${r.ta.toFixed(2)} (${r.tc})</td>`;leaderboardBody.appendChild(tr);});}
+function switchTab(tab,save=true){state.activeTab=tab;const v=tab==='vote';votePanel.classList.toggle('hidden',!v);leaderboardPanel.classList.toggle('hidden',v);voteTabBtn.className=v?'':'ghost';leaderboardTabBtn.className=v?'ghost':''; if(save) saveUserData();}
+
+loginBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const snap=await getDoc(doc(db,'users',userDocId(email)));if(!snap.exists()) throw new Error('Аккаунт не найден');const data=snap.data();if(data.password!==password) throw new Error('Неверный пароль');currentUser={email,password};state=data.state||state;resetDraft();render();authMsg.textContent='';}catch(e){authMsg.textContent=e.message;authMsg.className='danger';}};
+registerBtn.onclick=async()=>{try{const email=emailInput.value.trim(),password=passwordInput.value;const ref=doc(db,'users',userDocId(email));const snap=await getDoc(ref);if(snap.exists()) throw new Error('Email уже зарегистрирован');currentUser={email,password};state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};await saveUserData();resetDraft();render();authMsg.textContent='';}catch(e){authMsg.textContent=e.message;authMsg.className='danger';}};
+logoutBtn.onclick=()=>{currentUser=null;draft=null;render();};
+addPlayerBtn.onclick=async()=>{const n=newPlayerInput.value.trim();if(!n||state.players.includes(n))return;state.players.push(n);newPlayerInput.value='';resetDraft();await saveUserData();render();};
+voteTabBtn.onclick=()=>switchTab('vote'); leaderboardTabBtn.onclick=()=>switchTab('leaderboard'); backBtn.onclick=goBack; confirmStageBtn.onclick=confirmStage; finishBtn.onclick=finalizeParam;
+render();
+</script></body></html>
