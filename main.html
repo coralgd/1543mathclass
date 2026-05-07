@@ -1,12 +1,11 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Main</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'><div class='row' style='justify-content:space-between'><strong id='welcome'></strong><button id='logout' class='ghost'>Выйти</button></div>
 <div class='row' style='margin-top:12px'><a href='vote.html'><button>Страница голосования</button></a><a href='leaderboard.html'><button class='ghost'>Страница лидерборда</button></a></div>
-<div class='row' style='margin-top:12px'><input id='new-player' placeholder='Ник нового игрока'><button id='add-player'>Добавить игрока</button></div><div id='msg'></div></div>
+<p style='margin-top:12px'>Игроки формируются автоматически из зарегистрированных и верифицированных аккаунтов. Вы можете только оценивать других игроков.</p>
+</div>
 <script type='module'>
-import { requireVerified, saveState, clearSession } from './app.js';
+import { requireVerified, clearSession } from './app.js';
 const user=await requireVerified(); if(!user) location.href='index.html';
-const state=user.state||{players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};
 document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;
 document.getElementById('logout').onclick=()=>{clearSession();location.href='index.html';};
-document.getElementById('add-player').onclick=async()=>{const n=document.getElementById('new-player').value.trim();if(!n||state.players.includes(n)) return;state.players.push(n);await saveState(user.email,user.password,user.verified,state);document.getElementById('new-player').value='';document.getElementById('msg').textContent='Игрок добавлен';document.getElementById('msg').className='ok';};
 </script></body></html>

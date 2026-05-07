@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 const firebaseConfig = { apiKey:"AIzaSyAxgLF6gMi0S52d0cisPRooLNNCC986Wh4", authDomain:"mathclass-a9815.firebaseapp.com", projectId:"mathclass-a9815", storageBucket:"mathclass-a9815.firebasestorage.app", messagingSenderId:"39490049511", appId:"1:39490049511:web:ad1af15160612405881942" };
 const app = initializeApp(firebaseConfig);
@@ -23,7 +23,7 @@ export async function registerUser(email,password){
   const ref=doc(db,'users',userDocId(email));
   const snap=await getDoc(ref);
   if(snap.exists()) throw new Error('Email уже зарегистрирован');
-  const state={players:['Игрок_1','Игрок_2','Игрок_3'],votes:{},activeTab:'vote'};
+  const state={votes:{},activeTab:'vote'};
   await setDoc(ref,{email,password,verified:false,state});
 }
 
@@ -37,6 +37,16 @@ export async function requireVerified(){
   const user=await getUser(email);
   if(!user || user.verified!==true) return null;
   return user;
+}
+
+export async function getVerifiedPlayers(currentEmail=''){
+  const usersRef=collection(db,'users');
+  const q=query(usersRef,where('verified','==',true));
+  const snap=await getDocs(q);
+  return snap.docs
+    .map(d=>d.data()?.email)
+    .filter(email=>email && email!==currentEmail)
+    .sort((a,b)=>a.localeCompare(b));
 }
 
 export function getParamStats(state,player,param){
