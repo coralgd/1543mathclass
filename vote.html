@@ -3,12 +3,12 @@
 <div class='row' style='justify-content:space-between'><strong id='welcome'></strong><div><a href='main.html'><button class='ghost'>Main</button></a> <a href='leaderboard.html'><button class='ghost'>Лидерборд</button></a></div></div>
 <div id='vote-lock'></div><h3 id='param-title'></h3><h4 id='stage-title'></h4><div id='stage-stats'></div>
 <div id='candidate-list' class='scroll'></div><div class='row'><button id='back-btn' class='ghost'>Назад</button><button id='confirm-btn'>Подтвердить место</button></div>
-<div id='preview' class='hidden scroll'></div><button id='finish-btn' class='hidden'>Подтвердить критерий</button>
+<div id='preview' class='hidden scroll'></div><button id='finish-btn' class='hidden'>Отправить модератору</button>
 </div>
 <script type='module'>
-import { requireVerified, saveState, POINTS, PARAMS, getVerifiedPlayers } from './app.js';
+import { requireVerified, POINTS, PARAMS, getVerifiedPlayers, upsertSubmission } from './app.js';
 const user=await requireVerified(); if(!user) location.href='index.html';
-const state=user.state||{votes:{},activeTab:'vote'};
+const state=user.state||{votes:{},approvedVotes:{},activeTab:'vote'};
 document.getElementById('welcome').textContent=`${user.email}`;
 const players=await getVerifiedPlayers(user.email);
 let draft={param:0,place:1,remaining:[...players],selected:new Set(),groups:{}};
@@ -20,6 +20,6 @@ $('param-title').textContent=`${PARAMS[draft.param]} (${draft.param+1}/4)`;
 if(draft.place<=10){const rem=draft.remaining.length,placesLeft=11-draft.place,max=rem-(placesLeft-1);$('stage-title').textContent=`Место ${draft.place} (${POINTS[draft.place-1]} баллов)`;$('stage-stats').textContent=`Выберите 1..${max}`;$('candidate-list').innerHTML='';draft.remaining.forEach(p=>{const d=document.createElement('div');d.className='line'+(draft.selected.has(p)?' sel':'');d.textContent=p;d.onclick=()=>{if(draft.selected.has(p))draft.selected.delete(p);else if(draft.selected.size<max)draft.selected.add(p);render();};$('candidate-list').appendChild(d);});$('preview').classList.add('hidden');$('finish-btn').classList.add('hidden');} else {let html=`<h3>Итог ${PARAMS[draft.param]}</h3>`;for(let i=1;i<=10;i++){html+=`<div>${i} место: ${(draft.groups[i]||[]).join(', ')||'—'}</div>`;}$('preview').innerHTML=html;$('preview').classList.remove('hidden');$('finish-btn').classList.remove('hidden');$('candidate-list').innerHTML='';$('stage-title').textContent='Проверка';$('stage-stats').textContent='';}}
 $('confirm-btn').onclick=()=>{const rem=draft.remaining.length,placesLeft=11-draft.place,max=rem-(placesLeft-1),pick=[...draft.selected];if(pick.length<1||pick.length>max){alert(`Выберите 1..${max}`);return;}draft.groups[draft.place]=pick;draft.remaining=draft.remaining.filter(p=>!draft.selected.has(p));draft.selected=new Set();draft.place++;render();};
 $('back-btn').onclick=()=>{if(draft.place<=1)return;const prev=draft.place-1;if(draft.groups[prev]){draft.remaining=[...draft.groups[prev],...draft.remaining];delete draft.groups[prev];}draft.place=prev;draft.selected=new Set();render();};
-$('finish-btn').onclick=async()=>{for(let i=1;i<=10;i++) for(const p of (draft.groups[i]||[])){ensureVote(p,user.email);state.votes[p][user.email][PARAMS[draft.param]]=POINTS[i-1];}if(draft.param<3){draft.param++;resetParam();}else{alert('Все критерии сохранены');draft={param:0,place:1,remaining:[...players],selected:new Set(),groups:{}};}await saveState(user.email,user.password,user.verified,state);render();};
+$('finish-btn').onclick=async()=>{for(let i=1;i<=10;i++) for(const p of (draft.groups[i]||[])){ensureVote(p,user.email);state.votes[p][user.email][PARAMS[draft.param]]=POINTS[i-1];}if(draft.param<3){draft.param++;resetParam();}else{await upsertSubmission(user.email,state.votes);alert('Отправка сохранена и отправлена модератору на подтверждение');draft={param:0,place:1,remaining:[...players],selected:new Set(),groups:{}};state.votes={};}render();};
 render();
 </script></body></html>
