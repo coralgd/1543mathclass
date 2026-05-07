@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Голосование игроков</title>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f5f7fb;margin:0;padding:20px;color:#1f2937}
+    .card{max-width:920px;margin:0 auto;background:#fff;border-radius:12px;padding:18px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+    .hidden{display:none}.row{display:flex;gap:8px;align-items:center}.stack>*{margin:8px 0}
+    input,select,button{padding:8px;border-radius:8px;border:1px solid #d1d5db}
+    button{background:#2563eb;color:#fff;border:none;cursor:pointer}.ghost{background:#e5e7eb;color:#111827}
+    .line{display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eef2f7}
+    .danger{color:#b91c1c}.ok{color:#166534}.tabs{display:flex;gap:8px;margin:10px 0}
+    table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #eef2f7;text-align:left}
+  </style>
+</head>
+<body>
+<div class="card" id="login-screen">
+  <h2>Начальный экран</h2>
+  <div class="row"><input id="nickname" placeholder="Ваш ник" /><button id="login-btn">Войти</button></div>
+</div>
+
+<div class="card hidden" id="app-screen">
+  <div class="row" style="justify-content:space-between"><strong id="welcome"></strong><button id="logout-btn" class="ghost">Выйти</button></div>
+  <div class="row" style="margin-top:10px"><input id="new-player" placeholder="Ник нового игрока" /><button id="add-player-btn">Добавить</button></div>
+  <div class="tabs"><button id="vote-tab-btn">Голосовать</button><button id="leaderboard-tab-btn" class="ghost">Лидерборд</button></div>
+
+  <div id="vote-panel" class="stack">
+    <div id="vote-lock" class="danger"></div>
+    <div id="vote-list"></div>
+    <button id="check-btn">Показать итог перед подтверждением</button>
+    <div id="preview" class="hidden"></div>
+    <button id="confirm-vote-btn" class="hidden">Подтвердить голос</button>
+  </div>
+
+  <div id="leaderboard-panel" class="hidden">
+    <table><thead><tr><th>Игрок</th><th>Среднее</th><th>Оценок</th></tr></thead><tbody id="leaderboard-body"></tbody></table>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY='local-vote-app-v7';
+const defaultPlayers=['Игрок_1','Игрок_2','Игрок_3'];
+const POINTS=[9,8,7,6,5,4,3,2,1,0];
+const state=loadState();
+let draftAssignments={};
+
+const $=id=>document.getElementById(id);
+const loginScreen=$('login-screen'),appScreen=$('app-screen'),nicknameInput=$('nickname'),loginBtn=$('login-btn'),welcome=$('welcome'),logoutBtn=$('logout-btn');
+const newPlayerInput=$('new-player'),addPlayerBtn=$('add-player-btn'),voteTabBtn=$('vote-tab-btn'),leaderboardTabBtn=$('leaderboard-tab-btn');
+const votePanel=$('vote-panel'),leaderboardPanel=$('leaderboard-panel'),voteLock=$('vote-lock'),voteList=$('vote-list'),checkBtn=$('check-btn'),preview=$('preview'),confirmVoteBtn=$('confirm-vote-btn'),leaderboardBody=$('leaderboard-body');
+
+function loadState(){try{const p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}');return{currentUser:p.currentUser||'',players:Array.isArray(p.players)&&p.players.length?p.players:defaultPlayers,votes:p.votes&&typeof p.votes==='object'?p.votes:{},activeTab:p.activeTab==='leaderboard'?'leaderboard':'vote'};}catch{return{currentUser:'',players:defaultPlayers,votes:{},activeTab:'vote'};}}
+function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}
+function ensurePlayerVoteMap(player){if(!state.votes[player]||typeof state.votes[player]!=='object')state.votes[player]={};}
+
+function resetDraft(){draftAssignments={};state.players.forEach(p=>draftAssignments[p]=1);}
+
+function render(){const inUser=!!state.currentUser;loginScreen.classList.toggle('hidden',inUser);appScreen.classList.toggle('hidden',!inUser);if(inUser)welcome.textContent=`Вы вошли как: ${state.currentUser}`;if(!Object.keys(draftAssignments).length)resetDraft();renderVotePanel();renderLeaderboard();switchTab(state.activeTab,false);}
+
+function renderVotePanel(){
+  const locked=state.players.length<10;
+  voteLock.textContent=locked?`Голосование заблокировано: нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Распределите всех игроков по местам 1..10. Все места должны быть заполнены.';
+  voteLock.className=locked?'danger':'ok';
+  voteList.innerHTML='';preview.classList.add('hidden');confirmVoteBtn.classList.add('hidden');
+  if(locked) return;
+  state.players.forEach(player=>{
+    const row=document.createElement('div');row.className='line';
+    const name=document.createElement('div');name.textContent=player;
+    const sel=document.createElement('select');
+    for(let i=1;i<=10;i++){const o=document.createElement('option');o.value=i;o.textContent=`${i} место`;sel.appendChild(o)}
+    sel.value=String(draftAssignments[player]||1);
+    sel.onchange=()=>{draftAssignments[player]=Number(sel.value)};
+    row.append(name,sel);voteList.appendChild(row);
+  });
+}
+
+function validateAssignments(){
+  const placesCount=Array(10).fill(0);
+  state.players.forEach(p=>{const place=draftAssignments[p]; if(place>=1&&place<=10)placesCount[place-1]++;});
+  const empty=[];placesCount.forEach((c,i)=>{if(c===0)empty.push(i+1)});
+  return {ok:empty.length===0,empty,placesCount};
+}
+
+function buildPreview(){
+  const byPlace=Array.from({length:10},()=>[]);
+  state.players.forEach(p=>byPlace[draftAssignments[p]-1].push(p));
+  let html='<h3>Итог перед подтверждением</h3>';
+  for(let i=0;i<10;i++){html+=`<div>${i+1} место (${POINTS[i]} баллов): ${byPlace[i].join(', ')||'—'}</div>`;}
+  preview.innerHTML=html;
+}
+
+function finalizeVote(){
+  for(const p of state.players){ensurePlayerVoteMap(p);const place=draftAssignments[p];state.votes[p][state.currentUser]=POINTS[place-1];}
+  saveState();resetDraft();renderVotePanel();renderLeaderboard();
+}
+
+function getStats(player){ensurePlayerVoteMap(player);const vals=Object.values(state.votes[player]).filter(v=>Number.isInteger(v));const c=vals.length;return{avg:c?vals.reduce((a,b)=>a+b,0)/c:0,count:c};}
+function renderLeaderboard(){const rows=state.players.map(p=>({player:p,...getStats(p)})).sort((a,b)=>b.avg-a.avg||b.count-a.count||a.player.localeCompare(b.player,'ru'));leaderboardBody.innerHTML='';rows.forEach(r=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${r.player}</td><td>${r.avg.toFixed(2)}</td><td>${r.count}</td>`;leaderboardBody.appendChild(tr);});}
+function switchTab(tab,save=true){state.activeTab=tab;const vote=tab==='vote';votePanel.classList.toggle('hidden',!vote);leaderboardPanel.classList.toggle('hidden',vote);voteTabBtn.className=vote?'':'ghost';leaderboardTabBtn.className=vote?'ghost':'';if(save)saveState();}
+
+loginBtn.onclick=()=>{const n=nicknameInput.value.trim();if(!n)return;state.currentUser=n;if(!state.players.includes(n))state.players.push(n);saveState();resetDraft();render();nicknameInput.value='';};
+addPlayerBtn.onclick=()=>{const n=newPlayerInput.value.trim();if(!n||state.players.includes(n))return;state.players.push(n);ensurePlayerVoteMap(n);draftAssignments[n]=1;saveState();render();newPlayerInput.value='';};
+logoutBtn.onclick=()=>{state.currentUser='';saveState();render();};
+voteTabBtn.onclick=()=>switchTab('vote'); leaderboardTabBtn.onclick=()=>switchTab('leaderboard');
+checkBtn.onclick=()=>{const v=validateAssignments(); if(!v.ok){alert('Нужно заполнить все места 1..10. Пустые места: '+v.empty.join(', ')); return;} buildPreview(); preview.classList.remove('hidden'); confirmVoteBtn.classList.remove('hidden');};
+confirmVoteBtn.onclick=()=>{const v=validateAssignments(); if(!v.ok){alert('Перед подтверждением заполните все места.'); return;} finalizeVote(); alert('Голос сохранён.');};
+
+render();
+</script>
+</body>
+</html>
