@@ -87,7 +87,7 @@
   </div>
 
 <script>
-const STORAGE_KEY = 'local-vote-app-v4';
+const STORAGE_KEY = 'local-vote-app-v5';
 const defaultPlayers = ['Игрок_1','Игрок_2','Игрок_3'];
 const POINTS = [9,8,7,6,5,4,3,2,1,0];
 const WORST_STAGE_FROM = 8;
@@ -107,53 +107,55 @@ function loadState(){try{const p=JSON.parse(localStorage.getItem(STORAGE_KEY)||'
 function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function ensurePlayerVoteMap(player){ if(!state.votes[player]||typeof state.votes[player]!=='object') state.votes[player]={}; }
 
-function initDraft(){ draft={ mode:'main', stage:1, picks:{}, worstIndex:0, worstEmpties:[] }; }
+function initDraft(){ draft={ mode:'main', stage:1, picks:{}, moveStage:1, moveSelection:{} }; }
 function playersAtPlace(place){ return Object.entries(draft.picks).filter(([,p])=>p===place).map(([n])=>n); }
-function placesCount(){ const set=new Set(Object.values(draft.picks)); return set.size; }
 function emptyPlaces(){ const res=[]; for(let i=1;i<=10;i++) if(playersAtPlace(i).length===0) res.push(i); return res; }
 
 function render(){ const inUser=Boolean(state.currentUser); loginScreen.classList.toggle('hidden',inUser); appScreen.classList.toggle('hidden',!inUser); if(inUser) welcome.textContent=`Вы вошли как: ${state.currentUser}`; if(!draft) initDraft(); renderVoteFlow(); renderLeaderboard(); switchTab(state.activeTab,false); }
 
-function startWorstPhase(){ draft.mode='worst'; draft.worstEmpties=emptyPlaces(); draft.worstIndex=0; }
-
 function renderVoteFlow(){
   const locked=state.players.length<10;
-  voteLock.textContent=locked?`Голосование заблокировано: нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Сначала распределите игроков по местам 1..10, затем (если есть пустые места) начнётся стадия выбора худших для дозаполнения.';
+  voteLock.textContent=locked?`Голосование заблокировано: нужно минимум 10 игроков, сейчас ${state.players.length}.`:'Стадия 1: распределите места 1..10. Стадия 2: по каждому месту выберите худших и перенесите их на следующее место.';
   voteLock.className=`hint ${locked?'danger':'ok'}`;
   voteStage.classList.toggle('hidden',locked);
   finishWrap.classList.toggle('hidden',locked);
   if(locked) return;
 
-  if(draft.mode==='main'){
-    stageTitle.textContent=`Основная стадия ${draft.stage}/10: место ${draft.stage} (${POINTS[draft.stage-1]} баллов)`;
-    stageHint.textContent=`Выберите игроков на это место. Пропуск разрешён только с ${WORST_STAGE_FROM}-го места.`;
-    selectedInfo.textContent=`Сейчас выбрано: ${playersAtPlace(draft.stage).join(', ') || 'никого'}`;
-    progress.textContent=`Игроков распределено: ${Object.keys(draft.picks).length}/${state.players.length}. Занято мест: ${placesCount()}/10.`;
-    skipStageBtn.disabled=draft.stage<WORST_STAGE_FROM;
-    confirmStageBtn.textContent=draft.stage<10?'Подтвердить место':'Завершить основную стадию';
-    renderPickListMain();
-    finishHint.textContent=''; finishVoteBtn.disabled=true;
-  } else {
-    const empties=draft.worstEmpties;
-    if(draft.worstIndex>=empties.length){
-      const still=emptyPlaces();
-      finishHint.textContent = still.length ? `Нельзя завершить: пустые места ${still.join(', ')}. На стадии худших сдвиньте игроков вниз, чтобы заполнить каждое место.` : 'Все 10 мест заполнены. Можно завершить голосование.';
-      finishVoteBtn.disabled = still.length>0;
-      stageTitle.textContent='Стадия выбора худших завершена';
-      stageHint.textContent=''; selectedInfo.textContent=''; pickList.innerHTML=''; progress.textContent='';
-      return;
-    }
-    const place=empties[draft.worstIndex];
-    const candidates=Object.entries(draft.picks).filter(([,pl])=>pl<place).map(([name])=>name);
-    stageTitle.textContent=`Стадия худших ${draft.worstIndex+1}/${empties.length}: заполнение пустого места ${place}`;
-    stageHint.textContent='Выберите одного худшего игрока из мест выше, чтобы сдвинуть его на это место. Можно пропустить и перейти к следующему пустому месту.';
-    selectedInfo.textContent='Если пропустить, место останется пустым и завершить голосование не получится.';
-    progress.textContent=`Пустые места сейчас: ${emptyPlaces().join(', ') || 'нет'}`;
-    renderPickListWorst(candidates, place);
-    skipStageBtn.disabled=false;
-    confirmStageBtn.textContent='Подтвердить перенос';
-    finishVoteBtn.disabled=true;
+  if(draft.mode==='main') renderMainStage();
+  else renderMoveStage();
+}
+
+function renderMainStage(){
+  stageTitle.textContent=`Стадия 1/2. Основное распределение: место ${draft.stage} (${POINTS[draft.stage-1]} баллов)`;
+  stageHint.textContent=`Выберите игроков на это место. Пропуск можно только с ${WORST_STAGE_FROM}-го места.`;
+  selectedInfo.textContent=`На месте ${draft.stage}: ${playersAtPlace(draft.stage).join(', ') || 'никого'}`;
+  progress.textContent=`Пустые места: ${emptyPlaces().join(', ') || 'нет'}`;
+  skipStageBtn.disabled=draft.stage<WORST_STAGE_FROM;
+  confirmStageBtn.textContent=draft.stage<10?'Подтвердить место':'Перейти к стадии переноса';
+  renderPickListMain();
+  finishHint.textContent='';
+  finishVoteBtn.disabled=true;
+}
+
+function renderMoveStage(){
+  const place=draft.moveStage;
+  if(place>=10){
+    const still=emptyPlaces();
+    stageTitle.textContent='Стадия 2/2 завершена';
+    stageHint.textContent=''; selectedInfo.textContent=''; pickList.innerHTML=''; progress.textContent='';
+    finishHint.textContent = still.length ? `Нельзя завершить: пустые места ${still.join(', ')}. Вернитесь и перенесите игроков вниз.` : 'Все места заполнены. Можно завершить голосование.';
+    finishVoteBtn.disabled = still.length>0;
+    return;
   }
+  const fromPlayers=playersAtPlace(place);
+  stageTitle.textContent=`Стадия 2/2. Перенос: место ${place} → место ${place+1}`;
+  stageHint.textContent='Выберите чекбоксами худших на текущем месте — они будут перенесены на следующее место. Можно пропустить место.';
+  selectedInfo.textContent=`Текущий состав места ${place}: ${fromPlayers.join(', ') || 'никого'}`;
+  progress.textContent=`Шаг переноса ${place} из 9. После переноса игроки смещаются на 1 место вниз.`;
+  confirmStageBtn.textContent='Подтвердить перенос худших';
+  skipStageBtn.disabled=false;
+  finishVoteBtn.disabled=true;
+  renderPickListMove(fromPlayers, place);
 }
 
 function renderPickListMain(){
@@ -162,10 +164,21 @@ function renderPickListMain(){
   state.players.forEach(player=>{ const lab=document.createElement('label'); lab.className='player-pick'; const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=playersAtPlace(draft.stage).includes(player); cb.disabled=unavailable.has(player); cb.onchange=()=>{ if(cb.checked) draft.picks[player]=draft.stage; else if(draft.picks[player]===draft.stage) delete draft.picks[player]; renderVoteFlow(); }; lab.append(cb,document.createTextNode(' '+player)); pickList.appendChild(lab); });
 }
 
-function renderPickListWorst(candidates, place){
+function renderPickListMove(fromPlayers, place){
   pickList.innerHTML='';
-  const current=playersAtPlace(place)[0]||'';
-  candidates.forEach(player=>{ const lab=document.createElement('label'); lab.className='player-pick'; const rb=document.createElement('input'); rb.type='radio'; rb.name='worst'; rb.checked=current===player; rb.onchange=()=>{ draft.picks[player]=place; renderVoteFlow(); }; lab.append(rb,document.createTextNode(' '+player)); pickList.appendChild(lab); });
+  const selected = draft.moveSelection[place] || [];
+  if(!fromPlayers.length){ pickList.innerHTML='<div class="hint">На этом месте нет игроков для переноса.</div>'; return; }
+  fromPlayers.forEach(player=>{ const lab=document.createElement('label'); lab.className='player-pick'; const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=selected.includes(player); cb.onchange=()=>{ const arr = new Set(draft.moveSelection[place]||[]); if(cb.checked) arr.add(player); else arr.delete(player); draft.moveSelection[place]=[...arr]; }; lab.append(cb,document.createTextNode(' '+player)); pickList.appendChild(lab); });
+}
+
+function applyMoveStage(){
+  const place=draft.moveStage;
+  const selected = new Set(draft.moveSelection[place] || []);
+  if(selected.size){
+    Object.keys(draft.picks).forEach(player=>{ if(draft.picks[player]===place && selected.has(player)) draft.picks[player]=place+1; });
+  }
+  draft.moveSelection[place]=[];
+  draft.moveStage += 1;
 }
 
 function finalizeVote(){ for(const p of state.players) ensurePlayerVoteMap(p); for(const p of state.players){ const pl=draft.picks[p]; state.votes[p][state.currentUser]=POINTS[pl-1]; } saveState(); initDraft(); renderVoteFlow(); renderLeaderboard(); }
@@ -177,8 +190,8 @@ loginBtn.onclick=()=>{const n=nicknameInput.value.trim(); if(!n) return; state.c
 addPlayerBtn.onclick=()=>{const n=newPlayerInput.value.trim(); if(!n||state.players.includes(n)) return; state.players.push(n); ensurePlayerVoteMap(n); saveState(); render(); newPlayerInput.value='';};
 voteTabBtn.onclick=()=>switchTab('vote'); leaderboardTabBtn.onclick=()=>switchTab('leaderboard');
 logoutBtn.onclick=()=>{state.currentUser=''; saveState(); render();};
-confirmStageBtn.onclick=()=>{ if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else startWorstPhase(); } else { draft.worstIndex+=1; } renderVoteFlow(); };
-skipStageBtn.onclick=()=>{ if(draft.mode==='main' && draft.stage<WORST_STAGE_FROM) return; if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else startWorstPhase(); } else { draft.worstIndex+=1; } renderVoteFlow(); };
+confirmStageBtn.onclick=()=>{ if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else { draft.mode='move'; draft.moveStage=1; } } else { applyMoveStage(); } renderVoteFlow(); };
+skipStageBtn.onclick=()=>{ if(draft.mode==='main' && draft.stage<WORST_STAGE_FROM) return; if(draft.mode==='main'){ if(draft.stage<10) draft.stage+=1; else { draft.mode='move'; draft.moveStage=1; } } else { draft.moveSelection[draft.moveStage]=[]; draft.moveStage+=1; } renderVoteFlow(); };
 finishVoteBtn.onclick=()=>{ if(emptyPlaces().length===0) finalizeVote(); else renderVoteFlow(); };
 
 render();
