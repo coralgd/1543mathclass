@@ -38,6 +38,7 @@ export async function upsertSubmission(voterEmail,votes){
   state.pendingSubmission={votes,status:'pending',updatedAt:new Date().toISOString()};
   await saveUser({...u,state});
 }
+export async function saveUser(user){ await setDoc(doc(db,'users',userDocId(user.email)),user); }
 
 export async function toggleUserVerification(targetEmail,currentValue,actor){
   const user=await getUser(targetEmail); if(!user) return;
