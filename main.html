@@ -1,11 +1,11 @@
 <!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Main</title><link rel='stylesheet' href='styles.css'></head><body>
 <div class='card'><div class='row' style='justify-content:space-between'><strong id='welcome'></strong><button id='logout' class='ghost'>Выйти</button></div>
-<div class='row' style='margin-top:12px'><a href='vote.html'><button>Страница голосования</button></a><a href='leaderboard.html'><button class='ghost'>Страница лидерборда</button></a></div>
+<div class='row' style='margin-top:12px'><a href='vote.html'><button>Страница голосования</button></a><a href='leaderboard.html'><button class='ghost'>Страница лидерборда</button></a><a id='mod-link' href='moderator.html' class='hidden'><button>Проверить</button></a></div>
 <p style='margin-top:12px'>Игроки формируются автоматически из зарегистрированных и верифицированных аккаунтов. Вы можете только оценивать других игроков.</p>
 </div>
 <script type='module'>
-import { requireVerified, clearSession } from './app.js';
-const user=await requireVerified(); if(!user) location.href='index.html';
-document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;
+import { getSessionEmail, watchCurrentUser, clearSession } from './app.js';
+if(!getSessionEmail()) location.href='index.html';
+watchCurrentUser((user)=>{if(!user){location.href='index.html';return;}if(user.verified!==true){location.href='verify.html';return;}document.getElementById('welcome').textContent=`Вы вошли: ${user.email}`;document.getElementById('mod-link').classList.toggle('hidden',user.role!=='moder');});
 document.getElementById('logout').onclick=()=>{clearSession();location.href='index.html';};
 </script></body></html>

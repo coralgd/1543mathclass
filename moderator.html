@@ -1,0 +1,23 @@
+<!doctype html><html lang='ru'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Модератор</title><link rel='stylesheet' href='styles.css'></head><body>
+<div class='card'>
+<div class='row' style='justify-content:space-between'><strong id='welcome'></strong><a href='main.html'><button class='ghost'>Main</button></a></div>
+<div class='tabs'><button id='tab-pending'>pending</button><button id='tab-send' class='ghost'>send</button></div>
+<div id='pending-box'><div class='row'><input id='search' placeholder='Поиск email'><select id='verified-filter'><option value='all'>Все</option><option value='yes'>Только verified</option><option value='no'>Только not verified</option></select></div><div id='users-list' class='scroll'></div></div>
+<div id='send-box' class='hidden'><div id='sub-list' class='scroll'></div><div id='sub-detail'></div></div>
+</div>
+<script type='module'>
+import { getSessionEmail, clearSession, watchCurrentUser, watchAllUsers, watchSubmissions, toggleUserVerification, applySubmissionToLeaderboard, PARAMS } from './app.js';
+if(!getSessionEmail()) location.href='index.html';
+const $=id=>document.getElementById(id);let me=null,users=[],subs=[];
+function enforceAccess(){ if(!me){ location.href='index.html'; return false;} if(me.verified!==true) {location.href='verify.html'; return false;} if(me.role!=='moder'){location.href='main.html'; return false;} return true; }
+function tab(name){const p=name==='pending';$('pending-box').classList.toggle('hidden',!p);$('send-box').classList.toggle('hidden',p);$('tab-pending').className=p?'':'ghost';$('tab-send').className=!p?'':'ghost';}
+$('tab-pending').onclick=()=>tab('pending');$('tab-send').onclick=()=>tab('send');
+function isFullSubmission(v){const players=Object.values(v||{});return players.length>0 && players.every(byParam=>PARAMS.every(pm=>Number.isInteger(byParam?.[pm])));} 
+function renderUsers(){const q=$('search').value.toLowerCase(),vf=$('verified-filter').value;const list=users.filter(u=>(u.email||'').toLowerCase().includes(q)).filter(u=>vf==='all'||(vf==='yes'?u.verified===true:u.verified!==true));$('users-list').innerHTML='';if(!list.length){$('users-list').innerHTML='<div class="line">Нет пользователей по текущему фильтру</div>';return;}list.forEach(u=>{const row=document.createElement('div');row.className='line';row.innerHTML=`<div class='row' style='justify-content:space-between'><div>${u.email} <small>(${u.verified?'verified':'not verified'})</small></div><button class='${u.verified?'btn-unverify':'btn-verify'}'>${u.verified?'Снять вериф':'Верифнуть'}</button></div>`;row.querySelector('button').onclick=async(e)=>{const btn=e.target;u.verified=!u.verified;btn.className=u.verified?'btn-unverify':'btn-verify';btn.textContent=u.verified?'Снять вериф':'Верифнуть';await toggleUserVerification(u.email,!u.verified,me.email);renderUsers();};$('users-list').appendChild(row);});}
+function renderSubDetail(s){if(!s){$('sub-detail').innerHTML='';return;}let html=`<h3>${s.voterEmail}</h3>`;Object.entries(s.votes||{}).forEach(([player,byParam])=>{html+=`<div class='line'><strong>${player}</strong><br>${Object.entries(byParam).map(([k,v])=>`${k}: ${v}`).join('<br>')}</div>`;});html+=`<button id='apply-btn'>Подтвердить и применить в лидерборд</button>`;$('sub-detail').innerHTML=html;$('apply-btn').onclick=async()=>{await applySubmissionToLeaderboard(s,me.email);};}
+function renderSubs(){$('sub-list').innerHTML='';const pending=subs.filter(s=>s.status!=='approved'&&isFullSubmission(s.votes));if(!pending.length){$('sub-list').innerHTML='<div class="line">Нет полных отправок (4 критерия)</div>';return;}pending.forEach((s,idx)=>{const d=document.createElement('div');d.className='line';d.textContent=`${idx+1}. ${s.voterEmail}`;d.onclick=()=>renderSubDetail(s);$('sub-list').appendChild(d);});}
+$('search').oninput=renderUsers;$('verified-filter').onchange=renderUsers;
+watchCurrentUser((u)=>{me=u;if(!enforceAccess()) return;$('welcome').textContent=`Модератор: ${me.email}`;});
+watchAllUsers((arr)=>{users=arr; if(enforceAccess()) renderUsers();});
+watchSubmissions((arr)=>{subs=arr; if(enforceAccess()) {renderSubs();renderSubDetail(null);}});
+</script></body></html>

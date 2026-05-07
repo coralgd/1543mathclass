@@ -1,11 +1,38 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // DEMO MODE (без Firebase Auth):
-    // Позволяет регистрацию/вход через Firestore-документы.
-    // В продакшене обязательно перейти на Firebase Auth.
+    function isEmail(v){ return v is string && v.size() > 3 && v.size() < 160 && v.matches('.*@.*\\..*'); }
+    function validRole(v){ return v in ['player','moder']; }
+    function validStatus(v){ return v in ['pending','approved']; }
+    function validState(s){ return s is map && s.keys().hasAll(['votes','approvedVotes','activeTab']); }
+
+    // NOTE: без Firebase Auth это только базовая защита структуры данных.
+    // Для настоящей защиты ролей/владения нужен Firebase Auth + custom claims.
     match /users/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['email','password','verified','role','state'])
+        && isEmail(request.resource.data.email)
+        && request.resource.data.password is string
+        && request.resource.data.verified is bool
+        && validRole(request.resource.data.role)
+        && validState(request.resource.data.state);
+      allow update: if request.resource.data.keys().hasAll(['email','password','verified','role','state'])
+        && isEmail(request.resource.data.email)
+        && request.resource.data.password is string
+        && request.resource.data.verified is bool
+        && validRole(request.resource.data.role)
+        && validState(request.resource.data.state);
+      allow delete: if false;
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['voterEmail','votes','status'])
+        && request.resource.data.voterEmail is string
+        && isEmail(request.resource.data.voterEmail)
+        && request.resource.data.votes is map
+        && validStatus(request.resource.data.status);
+      allow delete: if false;
     }
   }
 }
